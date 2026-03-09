@@ -342,9 +342,11 @@ class WebBrowseTool(Tool):
                 return json.dumps({"status": "cookies_set", "count": len(cookies)})
 
             elif action == "screenshot":
-                # Reason: Use a sanitized URL fragment as the filename
+                # Save screenshot to the workspace directory with an absolute path
+                import os
+                workspace = os.environ.get("NANOBOT_WORKSPACE", os.path.expanduser("~/.nanobot/workspace"))
                 safe_name = re.sub(r"[^a-zA-Z0-9]", "_", str(page.url))[:50]
-                path = f"{safe_name}.png"
+                path = os.path.join(workspace, f"{safe_name}.png")
                 await page.screenshot(path=path)
                 return json.dumps({"path": path, "url": str(page.url)})
 
