@@ -1,7 +1,7 @@
 """Configuration schema using Pydantic."""
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -337,6 +337,7 @@ class Config(BaseSettings):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    plugins: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def workspace_path(self) -> Path:

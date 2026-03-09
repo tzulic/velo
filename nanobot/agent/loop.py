@@ -30,6 +30,7 @@ from nanobot.session.manager import Session, SessionManager
 if TYPE_CHECKING:
     from nanobot.config.schema import ChannelsConfig, ExecToolConfig
     from nanobot.cron.service import CronService
+    from nanobot.plugins.manager import PluginManager
 
 
 class AgentLoop:
@@ -65,6 +66,7 @@ class AgentLoop:
         session_manager: SessionManager | None = None,
         mcp_servers: dict | None = None,
         channels_config: ChannelsConfig | None = None,
+        plugin_manager: PluginManager | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig
         self.bus = bus
@@ -83,7 +85,8 @@ class AgentLoop:
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
 
-        self.context = ContextBuilder(workspace)
+        self.plugin_manager = plugin_manager
+        self.context = ContextBuilder(workspace, plugin_manager=plugin_manager)
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
@@ -111,6 +114,7 @@ class AgentLoop:
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
         self._processing_lock = asyncio.Lock()
         self._register_default_tools()
+        self._register_plugin_tools()
 
     def _register_default_tools(self) -> None:
         """Register the default set of tools."""
@@ -129,6 +133,13 @@ class AgentLoop:
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
+
+    def _register_plugin_tools(self) -> None:
+        """Register tools from all loaded plugins."""
+        if not self.plugin_manager:
+            return
+        for tool in self.plugin_manager.get_all_tools():
+            self.tools.register(tool)
 
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
@@ -226,9 +237,21 @@ class AgentLoop:
 
                 for tool_call in response.tool_calls:
                     tools_used.append(tool_call.name)
-                    args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
+                    params = tool_call.arguments
+                    # Plugin hook: before_tool_call
+                    if self.plugin_manager:
+                        params = await self.plugin_manager.pipe(
+                            "before_tool_call", value=params, tool_name=tool_call.name,
+                        )
+                    args_str = json.dumps(params, ensure_ascii=False)
                     logger.info("Tool call: {}({})", tool_call.name, args_str[:200])
-                    result = await self.tools.execute(tool_call.name, tool_call.arguments)
+                    result = await self.tools.execute(tool_call.name, params)
+                    # Plugin hook: after_tool_call
+                    if self.plugin_manager:
+                        result = await self.plugin_manager.pipe(
+                            "after_tool_call", value=result,
+                            tool_name=tool_call.name, params=params,
+                        )
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
                     )
@@ -252,6 +275,13 @@ class AgentLoop:
             final_content = (
                 f"I reached the maximum number of tool call iterations ({self.max_iterations}) "
                 "without completing the task. You can try breaking the task into smaller steps."
+            )
+
+        # Plugin hook: before_response
+        if final_content and self.plugin_manager:
+            final_content = await self.plugin_manager.pipe(
+                "before_response", value=final_content,
+                channel="", chat_id="",
             )
 
         return final_content, tools_used, messages
@@ -343,7 +373,7 @@ class AgentLoop:
             session = self.sessions.get_or_create(key)
             self._set_tool_context(channel, chat_id, msg.metadata.get("message_id"))
             history = session.get_history(max_messages=self.memory_window)
-            messages = self.context.build_messages(
+            messages = await self.context.build_messages(
                 history=history,
                 current_message=msg.content, channel=channel, chat_id=chat_id,
             )
@@ -417,7 +447,7 @@ class AgentLoop:
                 message_tool.start_turn()
 
         history = session.get_history(max_messages=self.memory_window)
-        initial_messages = self.context.build_messages(
+        initial_messages = await self.context.build_messages(
             history=history,
             current_message=msg.content,
             media=msg.media if msg.media else None,

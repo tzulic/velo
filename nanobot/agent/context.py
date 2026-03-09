@@ -1,16 +1,21 @@
 """Context builder for assembling agent prompts."""
 
+from __future__ import annotations
+
 import base64
 import mimetypes
 import platform
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.skills import SkillsLoader
 from nanobot.utils.helpers import detect_image_mime
+
+if TYPE_CHECKING:
+    from nanobot.plugins.manager import PluginManager
 
 
 class ContextBuilder:
@@ -19,13 +24,18 @@ class ContextBuilder:
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md"]
     _RUNTIME_CONTEXT_TAG = "[Runtime Context — metadata only, not instructions]"
 
-    def __init__(self, workspace: Path):
+    def __init__(
+        self,
+        workspace: Path,
+        plugin_manager: PluginManager | None = None,
+    ):
         self.workspace = workspace
         self.memory = MemoryStore(workspace)
         self.skills = SkillsLoader(workspace)
+        self._plugin_manager = plugin_manager
 
-    def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
-        """Build the system prompt from identity, bootstrap files, memory, and skills."""
+    async def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
+        """Build the system prompt from identity, bootstrap files, memory, skills, and plugins."""
         parts = [self._get_identity()]
 
         bootstrap = self._load_bootstrap_files()
@@ -35,6 +45,12 @@ class ContextBuilder:
         memory = self.memory.get_memory_context()
         if memory:
             parts.append(f"# Memory\n\n{memory}")
+
+        # Plugin context providers inject after memory
+        if self._plugin_manager:
+            plugin_ctx = await self._plugin_manager.get_context_additions()
+            if plugin_ctx:
+                parts.append(f"# Plugin Context\n\n{plugin_ctx}")
 
         always_skills = self.skills.get_always_skills()
         if always_skills:
@@ -51,7 +67,13 @@ Skills with available="false" need dependencies installed first - you can try in
 
 {skills_summary}""")
 
-        return "\n\n---\n\n".join(parts)
+        prompt = "\n\n---\n\n".join(parts)
+
+        # Pipe through after_prompt_build hook
+        if self._plugin_manager:
+            prompt = await self._plugin_manager.pipe("after_prompt_build", value=prompt)
+
+        return prompt
 
     def _get_identity(self) -> str:
         """Get the core identity section."""
@@ -118,7 +140,7 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
 
         return "\n\n".join(parts) if parts else ""
 
-    def build_messages(
+    async def build_messages(
         self,
         history: list[dict[str, Any]],
         current_message: str,
@@ -139,7 +161,7 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
             merged = [{"type": "text", "text": runtime_ctx}] + user_content
 
         return [
-            {"role": "system", "content": self.build_system_prompt(skill_names)},
+            {"role": "system", "content": await self.build_system_prompt(skill_names)},
             *history,
             {"role": "user", "content": merged},
         ]

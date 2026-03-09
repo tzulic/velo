@@ -313,6 +313,10 @@ def gateway(
 
     console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
     sync_workspace_templates(config.workspace_path)
+
+    from nanobot.plugins.manager import PluginManager
+    plugin_mgr = PluginManager(workspace=config.workspace_path, config=config.plugins)
+
     bus = MessageBus()
     provider = _make_provider(config)
     session_manager = SessionManager(config.workspace_path)
@@ -321,7 +325,7 @@ def gateway(
     cron_store_path = get_cron_dir() / "jobs.json"
     cron = CronService(cron_store_path)
 
-    # Create agent with cron service
+    # Create agent with cron service and plugin manager
     agent = AgentLoop(
         bus=bus,
         provider=provider,
@@ -340,6 +344,7 @@ def gateway(
         session_manager=session_manager,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
+        plugin_manager=plugin_mgr,
     )
 
     # Set cron callback (needs agent)
@@ -450,6 +455,7 @@ def gateway(
 
     async def run():
         try:
+            await plugin_mgr.load_all()
             await cron.start()
             await heartbeat.start()
             await asyncio.gather(
@@ -459,6 +465,7 @@ def gateway(
         except KeyboardInterrupt:
             console.print("\nShutting down...")
         finally:
+            await plugin_mgr.shutdown()
             await agent.close_mcp()
             heartbeat.stop()
             cron.stop()
@@ -495,6 +502,9 @@ def agent(
     config = _load_runtime_config(config, workspace)
     sync_workspace_templates(config.workspace_path)
 
+    from nanobot.plugins.manager import PluginManager
+    plugin_mgr = PluginManager(workspace=config.workspace_path, config=config.plugins)
+
     bus = MessageBus()
     provider = _make_provider(config)
 
@@ -524,6 +534,7 @@ def agent(
         restrict_to_workspace=config.tools.restrict_to_workspace,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
+        plugin_manager=plugin_mgr,
     )
 
     # Show spinner when logs are off (no output to miss); skip when logs are on
@@ -545,10 +556,14 @@ def agent(
     if message:
         # Single message mode — direct call, no bus needed
         async def run_once():
-            with _thinking_ctx():
-                response = await agent_loop.process_direct(message, session_id, on_progress=_cli_progress)
-            _print_agent_response(response, render_markdown=markdown)
-            await agent_loop.close_mcp()
+            await plugin_mgr.load_all()
+            try:
+                with _thinking_ctx():
+                    response = await agent_loop.process_direct(message, session_id, on_progress=_cli_progress)
+                _print_agent_response(response, render_markdown=markdown)
+            finally:
+                await plugin_mgr.shutdown()
+                await agent_loop.close_mcp()
 
         asyncio.run(run_once())
     else:
@@ -579,6 +594,7 @@ def agent(
             signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 
         async def run_interactive():
+            await plugin_mgr.load_all()
             bus_task = asyncio.create_task(agent_loop.run())
             turn_done = asyncio.Event()
             turn_done.set()
@@ -649,6 +665,7 @@ def agent(
                         console.print("\nGoodbye!")
                         break
             finally:
+                await plugin_mgr.shutdown()
                 agent_loop.stop()
                 outbound_task.cancel()
                 await asyncio.gather(bus_task, outbound_task, return_exceptions=True)
