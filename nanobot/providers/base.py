@@ -1,6 +1,7 @@
 """Base LLM provider interface."""
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -22,11 +23,23 @@ class LLMResponse:
     usage: dict[str, int] = field(default_factory=dict)
     reasoning_content: str | None = None  # Kimi, DeepSeek-R1 etc.
     thinking_blocks: list[dict] | None = None  # Anthropic extended thinking
+    error_code: str | None = None  # Classified error code (see providers/errors.py)
     
     @property
     def has_tool_calls(self) -> bool:
         """Check if response contains tool calls."""
         return len(self.tool_calls) > 0
+
+
+@dataclass
+class StreamChunk:
+    """A single chunk from a streaming LLM response."""
+    delta: str = ""                                       # Incremental text
+    tool_calls: list[ToolCallRequest] | None = None       # Complete tool calls (final chunk only)
+    finish_reason: str | None = None                      # Set on final chunk
+    usage: dict[str, int] | None = None                   # Set on final chunk
+    reasoning_content: str | None = None
+    error_code: str | None = None                         # Classified error code (on error chunks)
 
 
 class LLMProvider(ABC):
@@ -125,6 +138,41 @@ class LLMProvider(ABC):
             LLMResponse with content and/or tool calls.
         """
         pass
+
+    async def chat_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+        reasoning_effort: str | None = None,
+    ) -> AsyncIterator[StreamChunk]:
+        """Stream chat completion. Default fallback calls chat() and yields one chunk.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'.
+            tools: Optional list of tool definitions.
+            model: Model identifier.
+            max_tokens: Maximum tokens in response.
+            temperature: Sampling temperature.
+            reasoning_effort: Optional reasoning effort level.
+
+        Yields:
+            StreamChunk with incremental text or final metadata.
+        """
+        response = await self.chat(
+            messages=messages, tools=tools, model=model,
+            max_tokens=max_tokens, temperature=temperature,
+            reasoning_effort=reasoning_effort,
+        )
+        yield StreamChunk(
+            delta=response.content or "",
+            tool_calls=response.tool_calls or None,
+            finish_reason=response.finish_reason,
+            usage=response.usage,
+            reasoning_content=response.reasoning_content,
+        )
 
     @abstractmethod
     def get_default_model(self) -> str:

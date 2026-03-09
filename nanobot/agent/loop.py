@@ -13,6 +13,13 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable
 from loguru import logger
 
 from nanobot.agent.context import ContextBuilder
+from nanobot.agent.llm_helpers import (
+    PROACTIVE_TRIM_TARGET,
+    PROACTIVE_TRIM_THRESHOLD,
+    REACTIVE_TRIM_TARGET,
+    chat_with_retry,
+    trim_to_budget,
+)
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
@@ -24,7 +31,8 @@ from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
-from nanobot.providers.base import LLMProvider
+from nanobot.providers.base import LLMProvider, LLMResponse
+from nanobot.providers.context_limits import estimate_tokens, get_context_window
 from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
@@ -67,6 +75,7 @@ class AgentLoop:
         mcp_servers: dict | None = None,
         channels_config: ChannelsConfig | None = None,
         plugin_manager: PluginManager | None = None,
+        context_window: int | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig
         self.bus = bus
@@ -84,6 +93,7 @@ class AgentLoop:
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
+        self.context_window_override = context_window
 
         self.plugin_manager = plugin_manager
         self.context = ContextBuilder(workspace, plugin_manager=plugin_manager)
@@ -188,6 +198,20 @@ class AgentLoop:
             return f'{tc.name}("{val[:40]}…")' if len(val) > 40 else f'{tc.name}("{val}")'
         return ", ".join(_fmt(tc) for tc in tool_calls)
 
+    async def _chat_with_retry(self, **kwargs: Any) -> LLMResponse:
+        """Call provider.chat() with retry. Delegates to llm_helpers."""
+        return await chat_with_retry(self.provider, **kwargs)
+
+    async def _chat_stream_to_response(
+        self,
+        on_progress: Callable[..., Awaitable[None]],
+        **kwargs: Any,
+    ) -> LLMResponse:
+        """Stream LLM response. Delegates to llm_helpers."""
+        from nanobot.agent.llm_helpers import chat_stream_to_response
+
+        return await chat_stream_to_response(self.provider, on_progress, **kwargs)
+
     async def _run_agent_loop(
         self,
         initial_messages: list[dict],
@@ -198,24 +222,52 @@ class AgentLoop:
         iteration = 0
         final_content = None
         tools_used: list[str] = []
+        ctx_window = get_context_window(self.model, self.context_window_override)
+        tool_defs = self.tools.get_definitions()
 
         while iteration < self.max_iterations:
             iteration += 1
 
-            response = await self.provider.chat(
-                messages=messages,
-                tools=self.tools.get_definitions(),
-                model=self.model,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                reasoning_effort=self.reasoning_effort,
-            )
+            # Proactive context trim: if close to the limit, trim before calling LLM.
+            est = estimate_tokens(messages)
+            if est > ctx_window * PROACTIVE_TRIM_THRESHOLD:
+                budget = int(ctx_window * PROACTIVE_TRIM_TARGET)
+                messages = trim_to_budget(messages, budget)
+
+            llm_kwargs: dict[str, Any] = {
+                "messages": messages,
+                "tools": tool_defs,
+                "model": self.model,
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "reasoning_effort": self.reasoning_effort,
+            }
+
+            # Use streaming when a progress callback is available.
+            if on_progress:
+                response = await self._chat_stream_to_response(
+                    on_progress, **llm_kwargs,
+                )
+            else:
+                response = await self._chat_with_retry(**llm_kwargs)
+
+            # Reactive trim: context overflow → trim aggressively and retry once.
+            if (response.finish_reason == "error"
+                    and response.error_code == "context_overflow"):
+                budget = int(ctx_window * REACTIVE_TRIM_TARGET)
+                trimmed = trim_to_budget(messages, budget)
+                if len(trimmed) < len(messages):
+                    logger.warning(
+                        "context.overflow_recovery: trimmed {} → {} messages, retrying",
+                        len(messages), len(trimmed),
+                    )
+                    messages = trimmed
+                    llm_kwargs["messages"] = messages
+                    response = await self._chat_with_retry(**llm_kwargs)
 
             if response.has_tool_calls:
                 if on_progress:
-                    thought = self._strip_think(response.content)
-                    if thought:
-                        await on_progress(thought)
+                    # Streaming already emitted thoughts; emit tool hints.
                     await on_progress(self._tool_hint(response.tool_calls), tool_hint=True)
 
                 tool_call_dicts = [

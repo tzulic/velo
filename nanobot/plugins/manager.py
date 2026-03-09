@@ -136,23 +136,29 @@ class PluginManager:
         )
         setup_fn(ctx)
 
-        # Collect registrations
-        self._tools.extend(ctx._collect_tools())
-        self._context_providers.extend(ctx._collect_context_providers())
-        self._services.extend(ctx._collect_services())
-        self._channels.extend(ctx._collect_channels())
+        # Collect registrations (cache to avoid double calls)
+        tools = ctx._collect_tools()
+        context_providers = ctx._collect_context_providers()
+        services = ctx._collect_services()
+        channels = ctx._collect_channels()
+        hooks = ctx._collect_hooks()
 
-        for hook_name, entries in ctx._collect_hooks().items():
+        self._tools.extend(tools)
+        self._context_providers.extend(context_providers)
+        self._services.extend(services)
+        self._channels.extend(channels)
+
+        for hook_name, entries in hooks.items():
             self._hooks[hook_name].extend(entries)
 
         logger.info(
-            "plugin.load_completed: {} (tools={}, hooks={}, services={}, channels={}, ctx={})",
+            "plugin.load_completed: {} (tools={}, hooks={}, services={}, channels={}, context_providers={})",
             meta.name,
-            len(ctx._collect_tools()),
-            sum(len(e) for e in ctx._collect_hooks().values()),
-            len(ctx._collect_services()),
-            len(ctx._collect_channels()),
-            len(ctx._collect_context_providers()),
+            len(tools),
+            sum(len(e) for e in hooks.values()),
+            len(services),
+            len(channels),
+            len(context_providers),
         )
 
     async def load_all(self) -> None:
@@ -292,7 +298,7 @@ class PluginManager:
             refs: The runtime references to propagate.
         """
         self._runtime = refs
-        for obj in [*self._services, *self._channels]:
+        for obj in (*self._services, *self._channels):
             if isinstance(obj, RuntimeAware):
                 try:
                     obj.set_runtime(refs)

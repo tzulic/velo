@@ -5,9 +5,13 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal, Protocol, Union, runtime_checkable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Protocol, Union, runtime_checkable
 
 from nanobot.agent.tools.base import Tool
+
+if TYPE_CHECKING:
+    from nanobot.bus.queue import MessageBus
+    from nanobot.providers.base import LLMProvider
 
 # ---------------------------------------------------------------------------
 # Type aliases
@@ -47,9 +51,9 @@ class RuntimeRefs:
     Propagated to services/channels implementing ``RuntimeAware``.
     """
 
-    provider: Any  # LLMProvider (Any to avoid circular import)
+    provider: LLMProvider
     model: str
-    bus: Any  # MessageBus
+    bus: MessageBus
     process_direct: Callable[..., Awaitable[str]] | None = None
     publish_outbound: Callable[..., Awaitable[None]] | None = None
 

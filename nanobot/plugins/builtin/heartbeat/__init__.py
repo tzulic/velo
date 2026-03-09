@@ -9,11 +9,13 @@ When active, the manual heartbeat code in the gateway skips itself
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 if TYPE_CHECKING:
+    from nanobot.heartbeat.service import HeartbeatService
     from nanobot.plugins.types import PluginContext, RuntimeRefs
 
 
@@ -23,11 +25,11 @@ class HeartbeatPlugin:
     Implements ``ServiceLike`` and ``RuntimeAware`` protocols.
     """
 
-    def __init__(self, workspace: Any, interval_s: int = 1800, enabled: bool = False) -> None:
+    def __init__(self, workspace: Path, interval_s: int = 1800, enabled: bool = False) -> None:
         self.workspace = workspace
         self.interval_s = interval_s
         self.enabled = enabled
-        self._service: Any | None = None  # HeartbeatService, created after set_runtime
+        self._service: HeartbeatService | None = None
 
     def set_runtime(self, refs: RuntimeRefs) -> None:
         """Create the HeartbeatService with runtime-provided dependencies.

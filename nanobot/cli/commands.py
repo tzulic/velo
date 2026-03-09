@@ -1,11 +1,20 @@
 """CLI commands for nanobot."""
 
+from __future__ import annotations
+
 import asyncio
 import os
 import select
 import signal
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nanobot.agent.loop import AgentLoop
+    from nanobot.bus.queue import MessageBus
+    from nanobot.plugins.manager import PluginManager
+    from nanobot.providers.base import LLMProvider
 
 # Force UTF-8 encoding for Windows console
 if sys.platform == "win32":
@@ -284,6 +293,39 @@ def _load_runtime_config(config: str | None = None, workspace: str | None = None
 
 
 # ============================================================================
+# Plugin lifecycle helper
+# ============================================================================
+
+
+async def _activate_plugins(
+    plugin_mgr: "PluginManager",
+    agent_loop: "AgentLoop",
+    provider: "LLMProvider",
+    bus: "MessageBus",
+) -> None:
+    """Load plugins, inject runtime refs, register tools, and start services.
+
+    Args:
+        plugin_mgr: PluginManager instance.
+        agent_loop: AgentLoop instance.
+        provider: LLM provider.
+        bus: MessageBus instance.
+    """
+    from nanobot.plugins.types import RuntimeRefs
+
+    await plugin_mgr.load_all()
+    plugin_mgr.set_runtime(RuntimeRefs(
+        provider=provider,
+        model=agent_loop.model,
+        bus=bus,
+        process_direct=agent_loop.process_direct,
+        publish_outbound=bus.publish_outbound,
+    ))
+    agent_loop._register_plugin_tools()
+    await plugin_mgr.start_services()
+
+
+# ============================================================================
 # Gateway / Server
 # ============================================================================
 
@@ -315,7 +357,6 @@ def gateway(
     sync_workspace_templates(config.workspace_path)
 
     from nanobot.plugins.manager import PluginManager
-    from nanobot.plugins.types import RuntimeRefs
     plugin_mgr = PluginManager(workspace=config.workspace_path, config=config.plugins)
 
     bus = MessageBus()
@@ -346,6 +387,7 @@ def gateway(
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
         plugin_manager=plugin_mgr,
+        context_window=config.agents.defaults.context_window,
     )
 
     # Set cron callback (needs agent)
@@ -456,23 +498,7 @@ def gateway(
 
     async def run():
         try:
-            # 1. Load plugins BEFORE agent.run() so tools are registered
-            await plugin_mgr.load_all()
-
-            # 2. Inject runtime refs (provider, bus, agent callbacks)
-            plugin_mgr.set_runtime(RuntimeRefs(
-                provider=provider,
-                model=agent.model,
-                bus=bus,
-                process_direct=agent.process_direct,
-                publish_outbound=bus.publish_outbound,
-            ))
-
-            # 3. Re-register plugin tools now that plugins are loaded
-            agent._register_plugin_tools()
-
-            # 4. Start plugin services, then cron/heartbeat
-            await plugin_mgr.start_services()
+            await _activate_plugins(plugin_mgr, agent, provider, bus)
 
             # Add plugin channels to channel manager
             plugin_channels = plugin_mgr.get_plugin_channels()
@@ -526,7 +552,6 @@ def agent(
     sync_workspace_templates(config.workspace_path)
 
     from nanobot.plugins.manager import PluginManager
-    from nanobot.plugins.types import RuntimeRefs
     plugin_mgr = PluginManager(workspace=config.workspace_path, config=config.plugins)
 
     bus = MessageBus()
@@ -559,6 +584,7 @@ def agent(
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
         plugin_manager=plugin_mgr,
+        context_window=config.agents.defaults.context_window,
     )
 
     # Show spinner when logs are off (no output to miss); skip when logs are on
@@ -580,16 +606,7 @@ def agent(
     if message:
         # Single message mode — direct call, no bus needed
         async def run_once():
-            await plugin_mgr.load_all()
-            plugin_mgr.set_runtime(RuntimeRefs(
-                provider=provider,
-                model=agent_loop.model,
-                bus=bus,
-                process_direct=agent_loop.process_direct,
-                publish_outbound=bus.publish_outbound,
-            ))
-            agent_loop._register_plugin_tools()
-            await plugin_mgr.start_services()
+            await _activate_plugins(plugin_mgr, agent_loop, provider, bus)
             try:
                 with _thinking_ctx():
                     response = await agent_loop.process_direct(message, session_id, on_progress=_cli_progress)
@@ -627,16 +644,7 @@ def agent(
             signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 
         async def run_interactive():
-            await plugin_mgr.load_all()
-            plugin_mgr.set_runtime(RuntimeRefs(
-                provider=provider,
-                model=agent_loop.model,
-                bus=bus,
-                process_direct=agent_loop.process_direct,
-                publish_outbound=bus.publish_outbound,
-            ))
-            agent_loop._register_plugin_tools()
-            await plugin_mgr.start_services()
+            await _activate_plugins(plugin_mgr, agent_loop, provider, bus)
             bus_task = asyncio.create_task(agent_loop.run())
             turn_done = asyncio.Event()
             turn_done.set()

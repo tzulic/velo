@@ -4,6 +4,7 @@ import hashlib
 import os
 import secrets
 import string
+from collections.abc import AsyncIterator
 from typing import Any
 
 import json_repair
@@ -11,7 +12,7 @@ import litellm
 from litellm import acompletion
 from loguru import logger
 
-from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+from nanobot.providers.base import LLMProvider, LLMResponse, StreamChunk, ToolCallRequest
 from nanobot.providers.registry import find_by_model, find_gateway
 
 # Standard chat-completion message keys.
@@ -61,6 +62,8 @@ class LiteLLMProvider(LLMProvider):
         litellm.suppress_debug_info = True
         # Drop unsupported parameters for providers (e.g., gpt-5 rejects some params)
         litellm.drop_params = True
+        # Protect against infinite streaming chunk loops (litellm built-in guard)
+        litellm.REPEATED_STREAMING_CHUNK_LIMIT = 100
 
     def _setup_env(self, api_key: str, api_base: str | None, model: str) -> None:
         """Set environment variables based on detected provider."""
@@ -228,56 +231,172 @@ class LiteLLMProvider(LLMProvider):
         Returns:
             LLMResponse with content and/or tool calls.
         """
-        original_model = model or self.default_model
-        model = self._resolve_model(original_model)
-        extra_msg_keys = self._extra_msg_keys(original_model, model)
-
-        if self._supports_cache_control(original_model):
-            messages, tools = self._apply_cache_control(messages, tools)
-
-        # Clamp max_tokens to at least 1 — negative or zero values cause
-        # LiteLLM to reject the request with "max_tokens must be at least 1".
-        max_tokens = max(1, max_tokens)
-
-        kwargs: dict[str, Any] = {
-            "model": model,
-            "messages": self._sanitize_messages(self._sanitize_empty_content(messages), extra_keys=extra_msg_keys),
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        }
-
-        # Apply model-specific overrides (e.g. kimi-k2.5 temperature)
-        self._apply_model_overrides(model, kwargs)
-
-        # Pass api_key directly — more reliable than env vars alone
-        if self.api_key:
-            kwargs["api_key"] = self.api_key
-
-        # Pass api_base for custom endpoints
-        if self.api_base:
-            kwargs["api_base"] = self.api_base
-
-        # Pass extra headers (e.g. APP-Code for AiHubMix)
-        if self.extra_headers:
-            kwargs["extra_headers"] = self.extra_headers
-        
-        if reasoning_effort:
-            kwargs["reasoning_effort"] = reasoning_effort
-            kwargs["drop_params"] = True
-        
-        if tools:
-            kwargs["tools"] = tools
-            kwargs["tool_choice"] = "auto"
+        kwargs = self._build_stream_kwargs(
+            messages, tools, model, max_tokens, temperature, reasoning_effort,
+        )
 
         try:
             response = await acompletion(**kwargs)
             return self._parse_response(response)
         except Exception as e:
-            # Return error as content for graceful handling
+            from nanobot.providers.errors import classify_error
+
+            error_msg = str(e)
             return LLMResponse(
-                content=f"Error calling LLM: {str(e)}",
+                content=f"Error calling LLM: {error_msg}",
                 finish_reason="error",
+                error_code=classify_error(error_msg),
             )
+
+    def _build_stream_kwargs(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        model: str | None,
+        max_tokens: int,
+        temperature: float,
+        reasoning_effort: str | None,
+    ) -> dict[str, Any]:
+        """Build kwargs for acompletion, shared between chat() and chat_stream().
+
+        Returns:
+            dict: kwargs ready for acompletion().
+        """
+        original_model = model or self.default_model
+        resolved = self._resolve_model(original_model)
+        extra_msg_keys = self._extra_msg_keys(original_model, resolved)
+
+        if self._supports_cache_control(original_model):
+            messages, tools = self._apply_cache_control(messages, tools)
+
+        max_tokens = max(1, max_tokens)
+
+        kwargs: dict[str, Any] = {
+            "model": resolved,
+            "messages": self._sanitize_messages(
+                self._sanitize_empty_content(messages), extra_keys=extra_msg_keys,
+            ),
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+
+        self._apply_model_overrides(resolved, kwargs)
+
+        if self.api_key:
+            kwargs["api_key"] = self.api_key
+        if self.api_base:
+            kwargs["api_base"] = self.api_base
+        if self.extra_headers:
+            kwargs["extra_headers"] = self.extra_headers
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
+            kwargs["drop_params"] = True
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+
+        return kwargs
+
+    async def chat_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+        reasoning_effort: str | None = None,
+    ) -> AsyncIterator[StreamChunk]:
+        """Stream chat completion via LiteLLM.
+
+        Args:
+            messages: List of message dicts.
+            tools: Optional tool definitions.
+            model: Model identifier.
+            max_tokens: Maximum tokens in response.
+            temperature: Sampling temperature.
+            reasoning_effort: Optional reasoning effort level.
+
+        Yields:
+            StreamChunk with incremental deltas and final metadata.
+        """
+        kwargs = self._build_stream_kwargs(
+            messages, tools, model, max_tokens, temperature, reasoning_effort,
+        )
+        kwargs["stream"] = True
+
+        try:
+            response = await acompletion(**kwargs)
+        except Exception as e:
+            from nanobot.providers.errors import classify_error
+
+            error_msg = str(e)
+            yield StreamChunk(
+                delta=f"Error calling LLM: {error_msg}",
+                finish_reason="error",
+                error_code=classify_error(error_msg),
+            )
+            return
+
+        accumulated_tool_calls: dict[int, dict[str, str]] = {}
+        reasoning_parts: list[str] = []
+
+        async for chunk in response:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            finish = chunk.choices[0].finish_reason
+
+            # Yield text deltas
+            if delta.content:
+                yield StreamChunk(delta=delta.content)
+
+            # Accumulate reasoning content across chunks
+            reasoning_delta = getattr(delta, "reasoning_content", None)
+            if reasoning_delta:
+                reasoning_parts.append(reasoning_delta)
+
+            # Accumulate tool call deltas
+            if delta.tool_calls:
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in accumulated_tool_calls:
+                        accumulated_tool_calls[idx] = {"name": "", "arguments": ""}
+                    # Reason: Tool call name only arrives in the first delta
+                    # for each index. Don't concatenate across multiple deltas.
+                    if tc_delta.function and tc_delta.function.name:
+                        accumulated_tool_calls[idx]["name"] = tc_delta.function.name
+                    if tc_delta.function and tc_delta.function.arguments:
+                        accumulated_tool_calls[idx]["arguments"] += tc_delta.function.arguments
+
+            # Final chunk
+            if finish:
+                final_tool_calls = None
+                if accumulated_tool_calls:
+                    final_tool_calls = [
+                        ToolCallRequest(
+                            id=_short_tool_id(),
+                            name=tc["name"],
+                            arguments=json_repair.loads(tc["arguments"])
+                            if tc["arguments"] else {},
+                        )
+                        for tc in accumulated_tool_calls.values()
+                    ]
+
+                usage = {}
+                if hasattr(chunk, "usage") and chunk.usage:
+                    usage = {
+                        "prompt_tokens": getattr(chunk.usage, "prompt_tokens", 0) or 0,
+                        "completion_tokens": getattr(chunk.usage, "completion_tokens", 0) or 0,
+                        "total_tokens": getattr(chunk.usage, "total_tokens", 0) or 0,
+                    }
+
+                yield StreamChunk(
+                    finish_reason=finish,
+                    tool_calls=final_tool_calls,
+                    usage=usage or None,
+                    reasoning_content="".join(reasoning_parts) or None,
+                )
+                return
 
     def _parse_response(self, response: Any) -> LLMResponse:
         """Parse LiteLLM response into our standard format."""
