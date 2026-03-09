@@ -315,6 +315,7 @@ def gateway(
     sync_workspace_templates(config.workspace_path)
 
     from nanobot.plugins.manager import PluginManager
+    from nanobot.plugins.types import RuntimeRefs
     plugin_mgr = PluginManager(workspace=config.workspace_path, config=config.plugins)
 
     bus = MessageBus()
@@ -455,7 +456,29 @@ def gateway(
 
     async def run():
         try:
+            # 1. Load plugins BEFORE agent.run() so tools are registered
             await plugin_mgr.load_all()
+
+            # 2. Inject runtime refs (provider, bus, agent callbacks)
+            plugin_mgr.set_runtime(RuntimeRefs(
+                provider=provider,
+                model=agent.model,
+                bus=bus,
+                process_direct=agent.process_direct,
+                publish_outbound=bus.publish_outbound,
+            ))
+
+            # 3. Re-register plugin tools now that plugins are loaded
+            agent._register_plugin_tools()
+
+            # 4. Start plugin services, then cron/heartbeat
+            await plugin_mgr.start_services()
+
+            # Add plugin channels to channel manager
+            plugin_channels = plugin_mgr.get_plugin_channels()
+            if plugin_channels:
+                channels.add_plugin_channels(plugin_channels)
+
             await cron.start()
             await heartbeat.start()
             await asyncio.gather(
@@ -503,6 +526,7 @@ def agent(
     sync_workspace_templates(config.workspace_path)
 
     from nanobot.plugins.manager import PluginManager
+    from nanobot.plugins.types import RuntimeRefs
     plugin_mgr = PluginManager(workspace=config.workspace_path, config=config.plugins)
 
     bus = MessageBus()
@@ -557,6 +581,15 @@ def agent(
         # Single message mode — direct call, no bus needed
         async def run_once():
             await plugin_mgr.load_all()
+            plugin_mgr.set_runtime(RuntimeRefs(
+                provider=provider,
+                model=agent_loop.model,
+                bus=bus,
+                process_direct=agent_loop.process_direct,
+                publish_outbound=bus.publish_outbound,
+            ))
+            agent_loop._register_plugin_tools()
+            await plugin_mgr.start_services()
             try:
                 with _thinking_ctx():
                     response = await agent_loop.process_direct(message, session_id, on_progress=_cli_progress)
@@ -595,6 +628,15 @@ def agent(
 
         async def run_interactive():
             await plugin_mgr.load_all()
+            plugin_mgr.set_runtime(RuntimeRefs(
+                provider=provider,
+                model=agent_loop.model,
+                bus=bus,
+                process_direct=agent_loop.process_direct,
+                publish_outbound=bus.publish_outbound,
+            ))
+            agent_loop._register_plugin_tools()
+            await plugin_mgr.start_services()
             bus_task = asyncio.create_task(agent_loop.run())
             turn_done = asyncio.Event()
             turn_done.set()

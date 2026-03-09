@@ -19,6 +19,9 @@ from nanobot.plugins.types import (
     HookFn,
     PluginContext,
     PluginMeta,
+    RuntimeAware,
+    RuntimeRefs,
+    ServiceLike,
 )
 
 # ---------------------------------------------------------------------------
@@ -48,6 +51,9 @@ class PluginManager:
         self._tools: list[Tool] = []
         self._context_providers: list[ContextProvider] = []
         self._hooks: dict[str, list[HookEntry]] = {name: [] for name in HOOKS}
+        self._services: list[ServiceLike] = []
+        self._channels: list[Any] = []
+        self._runtime: RuntimeRefs | None = None
         self._loaded = False
 
     # ------------------------------------------------------------------
@@ -133,15 +139,19 @@ class PluginManager:
         # Collect registrations
         self._tools.extend(ctx._collect_tools())
         self._context_providers.extend(ctx._collect_context_providers())
+        self._services.extend(ctx._collect_services())
+        self._channels.extend(ctx._collect_channels())
 
         for hook_name, entries in ctx._collect_hooks().items():
             self._hooks[hook_name].extend(entries)
 
         logger.info(
-            "plugin.load_completed: {} (tools={}, hooks={}, context_providers={})",
+            "plugin.load_completed: {} (tools={}, hooks={}, services={}, channels={}, ctx={})",
             meta.name,
             len(ctx._collect_tools()),
             sum(len(e) for e in ctx._collect_hooks().values()),
+            len(ctx._collect_services()),
+            len(ctx._collect_channels()),
             len(ctx._collect_context_providers()),
         )
 
@@ -272,11 +282,58 @@ class PluginManager:
         return list(self._tools)
 
     # ------------------------------------------------------------------
+    # Services & Runtime
+    # ------------------------------------------------------------------
+
+    def set_runtime(self, refs: RuntimeRefs) -> None:
+        """Inject late-bound runtime references into RuntimeAware services/channels.
+
+        Args:
+            refs: The runtime references to propagate.
+        """
+        self._runtime = refs
+        for obj in [*self._services, *self._channels]:
+            if isinstance(obj, RuntimeAware):
+                try:
+                    obj.set_runtime(refs)
+                except Exception:
+                    logger.exception("plugin.set_runtime_failed")
+
+    async def start_services(self) -> None:
+        """Start all registered services (error-isolated).
+
+        Each service is started sequentially. A failing service does not
+        block others from starting.
+        """
+        for service in self._services:
+            try:
+                await service.start()
+            except Exception:
+                logger.exception("plugin.service_start_failed")
+
+    async def stop_services(self) -> None:
+        """Stop all registered services in reverse order (error-isolated)."""
+        for service in reversed(self._services):
+            try:
+                service.stop()
+            except Exception:
+                logger.exception("plugin.service_stop_failed")
+
+    def get_plugin_channels(self) -> list[Any]:
+        """Return all channels registered by plugins.
+
+        Returns:
+            List of BaseChannel instances from plugins.
+        """
+        return list(self._channels)
+
+    # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     async def shutdown(self) -> None:
-        """Fire ``on_shutdown`` hooks for cleanup."""
+        """Stop services and fire ``on_shutdown`` hooks for cleanup."""
+        await self.stop_services()
         await self.fire("on_shutdown")
 
     # ------------------------------------------------------------------

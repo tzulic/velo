@@ -236,6 +236,20 @@ class ChannelManager:
             except asyncio.CancelledError:
                 break
 
+    def add_plugin_channels(self, plugin_channels: list[BaseChannel]) -> None:
+        """Add channels registered by plugins to the manager.
+
+        Args:
+            plugin_channels: List of BaseChannel instances from plugins.
+        """
+        for ch in plugin_channels:
+            name = getattr(ch, "name", None) or type(ch).__name__.lower()
+            if name in self.channels:
+                logger.warning("plugin.channel_name_conflict: {} (skipped)", name)
+                continue
+            self.channels[name] = ch
+            logger.info("Plugin channel registered: {}", name)
+
     def get_channel(self, name: str) -> BaseChannel | None:
         """Get a channel by name."""
         return self.channels.get(name)

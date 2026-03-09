@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal, Union
+from typing import Any, Awaitable, Callable, Literal, Protocol, Union, runtime_checkable
 
 from nanobot.agent.tools.base import Tool
 
@@ -33,6 +33,44 @@ HOOKS: dict[str, HookType] = {
     "after_tool_call": "modifying",
     "before_response": "modifying",
 }
+
+
+# ---------------------------------------------------------------------------
+# Runtime references (late-bound, set after AgentLoop creation)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RuntimeRefs:
+    """Late-bound references to runtime objects that aren't available at plugin load time.
+
+    Set after AgentLoop creation via ``PluginManager.set_runtime()``.
+    Propagated to services/channels implementing ``RuntimeAware``.
+    """
+
+    provider: Any  # LLMProvider (Any to avoid circular import)
+    model: str
+    bus: Any  # MessageBus
+    process_direct: Callable[..., Awaitable[str]] | None = None
+    publish_outbound: Callable[..., Awaitable[None]] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Service / RuntimeAware protocols
+# ---------------------------------------------------------------------------
+
+@runtime_checkable
+class ServiceLike(Protocol):
+    """Structural type for plugin services (start/stop lifecycle)."""
+
+    async def start(self) -> None: ...
+    def stop(self) -> None: ...
+
+
+@runtime_checkable
+class RuntimeAware(Protocol):
+    """Structural type for objects that accept late-bound runtime refs."""
+
+    def set_runtime(self, refs: RuntimeRefs) -> None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +117,8 @@ class PluginContext:
         self._tools: list[Tool] = []
         self._context_providers: list[ContextProvider] = []
         self._hooks: dict[str, list[HookEntry]] = {name: [] for name in HOOKS}
+        self._services: list[ServiceLike] = []
+        self._channels: list[Any] = []  # BaseChannel instances
 
     def register_tool(self, tool: Tool) -> None:
         """Register a tool that the agent can use.
@@ -95,6 +135,22 @@ class PluginContext:
             fn: A sync or async callable returning a string.
         """
         self._context_providers.append(fn)
+
+    def register_service(self, service: ServiceLike) -> None:
+        """Register a background service with start/stop lifecycle.
+
+        Args:
+            service: An object implementing the ``ServiceLike`` protocol.
+        """
+        self._services.append(service)
+
+    def register_channel(self, channel: Any) -> None:
+        """Register a custom channel (BaseChannel subclass).
+
+        Args:
+            channel: A BaseChannel instance to add to the channel manager.
+        """
+        self._channels.append(channel)
 
     def on(self, hook_name: str, callback: HookFn, priority: int = 100) -> None:
         """Register a hook callback.
@@ -126,6 +182,14 @@ class PluginContext:
     def _collect_hooks(self) -> dict[str, list[HookEntry]]:
         """Return all registered hooks."""
         return {name: list(entries) for name, entries in self._hooks.items()}
+
+    def _collect_services(self) -> list[ServiceLike]:
+        """Return all registered services."""
+        return list(self._services)
+
+    def _collect_channels(self) -> list[Any]:
+        """Return all registered channels."""
+        return list(self._channels)
 
     async def _resolve_provider(self, fn: ContextProvider) -> str:
         """Call a context provider, handling both sync and async."""

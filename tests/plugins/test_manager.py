@@ -110,9 +110,9 @@ class TestDiscovery:
         _write_plugin(tmp_path, "my_plugin", _TOOL_PLUGIN)
         mgr = PluginManager(workspace=tmp_path, config={})
         metas = mgr.discover()
-        assert len(metas) == 1
-        assert metas[0].name == "my_plugin"
-        assert metas[0].source == "workspace"
+        workspace_metas = [m for m in metas if m.source == "workspace"]
+        assert len(workspace_metas) == 1
+        assert workspace_metas[0].name == "my_plugin"
 
     def test_discover_ignores_files(self, tmp_path: Path) -> None:
         """Non-directory items in plugins/ should be ignored."""
@@ -120,13 +120,15 @@ class TestDiscovery:
         plugins_dir.mkdir()
         (plugins_dir / "not_a_plugin.py").write_text("x = 1")
         mgr = PluginManager(workspace=tmp_path, config={})
-        assert mgr.discover() == []
+        workspace_metas = [m for m in mgr.discover() if m.source == "workspace"]
+        assert workspace_metas == []
 
     def test_discover_ignores_dirs_without_init(self, tmp_path: Path) -> None:
         """Directories without __init__.py should be skipped."""
         (tmp_path / "plugins" / "no_init").mkdir(parents=True)
         mgr = PluginManager(workspace=tmp_path, config={})
-        assert mgr.discover() == []
+        workspace_metas = [m for m in mgr.discover() if m.source == "workspace"]
+        assert workspace_metas == []
 
     def test_discover_disabled_plugin(self, tmp_path: Path) -> None:
         """Plugins with enabled=false in config should be skipped."""
@@ -135,20 +137,22 @@ class TestDiscovery:
             workspace=tmp_path,
             config={"disabled_one": {"enabled": False}},
         )
-        assert mgr.discover() == []
+        workspace_metas = [m for m in mgr.discover() if m.source == "workspace"]
+        assert workspace_metas == []
 
     def test_discover_no_plugins_dir(self, tmp_path: Path) -> None:
-        """No crash when plugins/ directory doesn't exist."""
+        """No crash when plugins/ directory doesn't exist (only builtins found)."""
         mgr = PluginManager(workspace=tmp_path, config={})
-        assert mgr.discover() == []
+        workspace_metas = [m for m in mgr.discover() if m.source == "workspace"]
+        assert workspace_metas == []
 
     def test_discover_multiple_sorted(self, tmp_path: Path) -> None:
-        """Multiple plugins should be discovered in sorted order."""
+        """Multiple workspace plugins should be discovered in sorted order."""
         _write_plugin(tmp_path, "beta", _TOOL_PLUGIN)
         _write_plugin(tmp_path, "alpha", _CONTEXT_PLUGIN)
         mgr = PluginManager(workspace=tmp_path, config={})
-        names = [m.name for m in mgr.discover()]
-        assert names == ["alpha", "beta"]
+        workspace_names = [m.name for m in mgr.discover() if m.source == "workspace"]
+        assert workspace_names == ["alpha", "beta"]
 
 
 # ---------------------------------------------------------------------------
@@ -419,7 +423,8 @@ class TestIntrospection:
         _write_plugin(tmp_path, "beta", _CONTEXT_PLUGIN)
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
-        assert sorted(mgr.plugin_names) == ["alpha", "beta"]
+        assert "alpha" in mgr.plugin_names
+        assert "beta" in mgr.plugin_names
 
     @pytest.mark.asyncio
     async def test_loaded_flag(self, tmp_path: Path) -> None:
