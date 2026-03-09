@@ -4,6 +4,7 @@ x-common-config: &common-config
     dockerfile: Dockerfile
   volumes:
     - ~/.nanobot:/root/.nanobot
+    - ./nanobot:/opt/nanobot-src:ro
 
 services:
   nanobot-gateway:

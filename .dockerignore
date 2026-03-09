@@ -11,3 +11,6 @@ build/
 node_modules/
 bridge/dist/
 workspace/
+
+# Sibling repos (not needed in build context)
+openclaw/

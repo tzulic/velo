@@ -30,6 +30,9 @@ WORKDIR /app/bridge
 RUN npm install && npm run build
 WORKDIR /app
 
+# Nanobot source for Volos agent exploration
+COPY . /opt/nanobot-src
+
 # Create config directory
 RUN mkdir -p /root/.nanobot
 
