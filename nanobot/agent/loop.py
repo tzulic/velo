@@ -27,6 +27,7 @@ from nanobot.agent.tools.cron import CronTool
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.registry import ToolRegistry
+from nanobot.agent.tools.search import SearchToolsTool
 from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
@@ -153,13 +154,14 @@ class AgentLoop:
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
+        self.tools.register(SearchToolsTool(self.tools))
 
     def _register_plugin_tools(self) -> None:
-        """Register tools from all loaded plugins."""
+        """Register tools from all loaded plugins, respecting their deferred flag."""
         if not self.plugin_manager:
             return
-        for tool in self.plugin_manager.get_all_tools():
-            self.tools.register(tool)
+        for tool, deferred in self.plugin_manager.get_all_tools():
+            self.tools.register(tool, deferred=deferred)
 
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
@@ -233,10 +235,11 @@ class AgentLoop:
         final_content = None
         tools_used: list[str] = []
         ctx_window = get_context_window(self.model, self.context_window_override)
-        tool_defs = self.tools.get_definitions()
 
         while iteration < self.max_iterations:
             iteration += 1
+            # Refresh tool definitions each iteration so newly activated tools are included.
+            tool_defs = self.tools.get_definitions()
 
             # Proactive context trim: if close to the limit, trim before calling LLM.
             est = estimate_tokens(messages)
@@ -431,6 +434,7 @@ class AgentLoop:
         on_progress: Callable[[str], Awaitable[None]] | None = None,
     ) -> OutboundMessage | None:
         """Process a single inbound message and return the response."""
+        deferred_hint = self.tools.get_deferred_summary()
         # System messages: parse origin from chat_id ("channel:chat_id")
         if msg.channel == "system":
             channel, chat_id = (msg.chat_id.split(":", 1) if ":" in msg.chat_id
@@ -443,6 +447,7 @@ class AgentLoop:
             messages = await self.context.build_messages(
                 history=history,
                 current_message=msg.content, channel=channel, chat_id=chat_id,
+                deferred_tools_hint=deferred_hint,
             )
             final_content, _, all_msgs = await self._run_agent_loop(messages)
             self._save_turn(session, all_msgs, 1 + len(history))
@@ -519,6 +524,7 @@ class AgentLoop:
             current_message=msg.content,
             media=msg.media if msg.media else None,
             channel=msg.channel, chat_id=msg.chat_id,
+            deferred_tools_hint=deferred_hint,
         )
 
         async def _bus_progress(content: str, *, tool_hint: bool = False) -> None:

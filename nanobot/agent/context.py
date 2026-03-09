@@ -34,8 +34,17 @@ class ContextBuilder:
         self.skills = SkillsLoader(workspace)
         self._plugin_manager = plugin_manager
 
-    async def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
-        """Build the system prompt from identity, bootstrap files, memory, skills, and plugins."""
+    async def build_system_prompt(
+        self,
+        skill_names: list[str] | None = None,
+        deferred_tools_hint: str | None = None,
+    ) -> str:
+        """Build the system prompt from identity, bootstrap files, memory, skills, and plugins.
+
+        Args:
+            skill_names: Optional list of skill names to include.
+            deferred_tools_hint: Optional summary of deferred tools available via search_tools.
+        """
         parts = [self._get_identity()]
 
         bootstrap = self._load_bootstrap_files()
@@ -66,6 +75,13 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 Skills with available="false" need dependencies installed first - you can try installing them with apt/brew.
 
 {skills_summary}""")
+
+        if deferred_tools_hint:
+            parts.append(
+                f"# Available Tools (via search_tools)\n\n"
+                "The following capabilities are available on demand. "
+                f"Use the `search_tools` tool to activate them:\n{deferred_tools_hint}"
+            )
 
         prompt = "\n\n---\n\n".join(parts)
 
@@ -148,8 +164,19 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
         media: list[str] | None = None,
         channel: str | None = None,
         chat_id: str | None = None,
+        deferred_tools_hint: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Build the complete message list for an LLM call."""
+        """Build the complete message list for an LLM call.
+
+        Args:
+            history: Prior conversation messages.
+            current_message: The user's current message text.
+            skill_names: Optional list of skill names to include in the prompt.
+            media: Optional list of image file paths to include.
+            channel: Channel identifier for runtime context.
+            chat_id: Chat ID for runtime context.
+            deferred_tools_hint: Optional summary of deferred tools for the system prompt.
+        """
         runtime_ctx = self._build_runtime_context(channel, chat_id)
         user_content = self._build_user_content(current_message, media)
 
@@ -161,7 +188,10 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
             merged = [{"type": "text", "text": runtime_ctx}] + user_content
 
         return [
-            {"role": "system", "content": await self.build_system_prompt(skill_names)},
+            {
+                "role": "system",
+                "content": await self.build_system_prompt(skill_names, deferred_tools_hint),
+            },
             *history,
             {"role": "user", "content": merged},
         ]

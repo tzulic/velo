@@ -126,7 +126,7 @@ class TestPluginContextIntegration:
         await mgr.load_all()
 
         tools = mgr.get_all_tools()
-        assert any(t.name == "ping" for t in tools)
+        assert any(t.name == "ping" for t, _ in tools)
 
     @pytest.mark.asyncio
     async def test_workspace_override_builtin(self, tmp_path: Path) -> None:

@@ -48,7 +48,7 @@ class PluginManager:
         self._workspace = workspace
         self._config = config
         self._plugins: dict[str, PluginMeta] = {}
-        self._tools: list[Tool] = []
+        self._tools: list[tuple[Tool, bool]] = []  # (tool, deferred)
         self._context_providers: list[ContextProvider] = []
         self._hooks: dict[str, list[HookEntry]] = {name: [] for name in HOOKS}
         self._services: list[ServiceLike] = []
@@ -279,11 +279,12 @@ class PluginManager:
     # Tools
     # ------------------------------------------------------------------
 
-    def get_all_tools(self) -> list[Tool]:
-        """Return all tools registered by plugins.
+    def get_all_tools(self) -> list[tuple[Tool, bool]]:
+        """Return all tools registered by plugins as (tool, deferred) pairs.
 
         Returns:
-            List of Tool instances.
+            List of (Tool, deferred) tuples. deferred=True means the tool
+            should be registered in the deferred pool (loaded on-demand).
         """
         return list(self._tools)
 
