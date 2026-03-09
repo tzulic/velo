@@ -118,19 +118,21 @@ class PluginContext:
         self.plugin_name = plugin_name
         self.config = config
         self.workspace = workspace
-        self._tools: list[Tool] = []
+        self._tools: list[tuple[Tool, bool]] = []  # (tool, deferred)
         self._context_providers: list[ContextProvider] = []
         self._hooks: dict[str, list[HookEntry]] = {name: [] for name in HOOKS}
         self._services: list[ServiceLike] = []
         self._channels: list[Any] = []  # BaseChannel instances
 
-    def register_tool(self, tool: Tool) -> None:
+    def register_tool(self, tool: Tool, *, deferred: bool = False) -> None:
         """Register a tool that the agent can use.
 
         Args:
             tool: A Tool instance to register.
+            deferred: If True, the tool is loaded on-demand via search_tools
+                rather than being sent to the LLM on every call.
         """
-        self._tools.append(tool)
+        self._tools.append((tool, deferred))
 
     def add_context_provider(self, fn: ContextProvider) -> None:
         """Register a function that returns extra system-prompt context.
@@ -175,8 +177,8 @@ class PluginContext:
 
     # -- Internal helpers (used by PluginManager) --
 
-    def _collect_tools(self) -> list[Tool]:
-        """Return all registered tools."""
+    def _collect_tools(self) -> list[tuple[Tool, bool]]:
+        """Return all registered tools as (tool, deferred) pairs."""
         return list(self._tools)
 
     def _collect_context_providers(self) -> list[ContextProvider]:

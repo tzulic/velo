@@ -51,13 +51,24 @@ def test_context_stores_metadata(tmp_path: Path) -> None:
 
 
 def test_register_tool(tmp_path: Path) -> None:
-    """Registering a tool should be retrievable via _collect_tools."""
+    """Registering a tool should be retrievable via _collect_tools as (tool, deferred) tuple."""
     ctx = _make_ctx(tmp_path)
     tool = _DummyTool()
     ctx.register_tool(tool)
     collected = ctx._collect_tools()
     assert len(collected) == 1
-    assert collected[0].name == "dummy_tool"
+    assert collected[0][0].name == "dummy_tool"
+    assert collected[0][1] is False  # not deferred by default
+
+
+def test_register_tool_deferred(tmp_path: Path) -> None:
+    """Registering with deferred=True should store the flag."""
+    ctx = _make_ctx(tmp_path)
+    ctx.register_tool(_DummyTool(), deferred=True)
+    collected = ctx._collect_tools()
+    assert len(collected) == 1
+    assert collected[0][0].name == "dummy_tool"
+    assert collected[0][1] is True
 
 
 def test_register_multiple_tools(tmp_path: Path) -> None:

@@ -170,7 +170,9 @@ class TestLoading:
         await mgr.load_all()
         tools = mgr.get_all_tools()
         assert len(tools) == 1
-        assert tools[0].name == "greet"
+        tool, deferred = tools[0]
+        assert tool.name == "greet"
+        assert deferred is False
 
     @pytest.mark.asyncio
     async def test_load_registers_context_provider(self, tmp_path: Path) -> None:
@@ -190,13 +192,13 @@ class TestLoading:
         await mgr.load_all()
         # The good plugin should still have loaded
         assert len(mgr.get_all_tools()) == 1
-        assert mgr.get_all_tools()[0].name == "greet"
+        assert mgr.get_all_tools()[0][0].name == "greet"
 
     @pytest.mark.asyncio
     async def test_no_setup_function_is_error(self, tmp_path: Path) -> None:
         """A plugin without setup() should fail gracefully (error isolation)."""
         _write_plugin(tmp_path, "no_setup", _NO_SETUP_PLUGIN)
-        _write_plugin(tmp_path, "good", _TOOL_PLUGIN)
+        _write_plugin(tmp_path, "good_plugin", _TOOL_PLUGIN)
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
         assert len(mgr.get_all_tools()) == 1
@@ -204,7 +206,7 @@ class TestLoading:
     @pytest.mark.asyncio
     async def test_load_all_idempotent(self, tmp_path: Path) -> None:
         """Calling load_all() twice should be a no-op the second time."""
-        _write_plugin(tmp_path, "plugin", _TOOL_PLUGIN)
+        _write_plugin(tmp_path, "plugin_idem", _TOOL_PLUGIN)
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
         assert len(mgr.get_all_tools()) == 1
