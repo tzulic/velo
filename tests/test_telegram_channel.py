@@ -165,6 +165,24 @@ async def test_send_progress_keeps_message_in_topic() -> None:
 
 
 @pytest.mark.asyncio
+async def test_send_final_message_exactly_once() -> None:
+    """Final response must be sent exactly once — no duplication."""
+    config = TelegramConfig(enabled=True, token="123:abc", allow_from=["*"])
+    channel = TelegramChannel(config, MessageBus())
+    channel._app = _FakeApp(lambda: None)
+
+    msg = OutboundMessage(
+        channel="telegram",
+        chat_id="42",
+        content="Hello! I'm ready to help.",
+        metadata={},
+    )
+    await channel.send(msg)
+
+    assert len(channel._app.bot.sent_messages) == 1
+
+
+@pytest.mark.asyncio
 async def test_send_reply_infers_topic_from_message_id_cache() -> None:
     config = TelegramConfig(enabled=True, token="123:abc", allow_from=["*"], reply_to_message=True)
     channel = TelegramChannel(config, MessageBus())
