@@ -150,7 +150,7 @@ nanobot channels login
 
 > [!TIP]
 > Set your API key in `~/.nanobot/config.json`.
-> Get API keys: [OpenRouter](https://openrouter.ai/keys) (Global) · [Brave Search](https://brave.com/search/api/) (optional, for web search)
+> Get API keys: [OpenRouter](https://openrouter.ai/keys) (Global) · [Parallel.ai](https://platform.parallel.ai) (optional, for web search & fetch)
 
 **1. Initialize**
 

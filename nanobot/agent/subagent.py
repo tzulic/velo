@@ -8,13 +8,14 @@ from typing import Any
 
 from loguru import logger
 
+from nanobot.agent.tools.browse import BrowserSession, WebBrowseTool
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage
 from nanobot.bus.queue import MessageBus
-from nanobot.config.schema import ExecToolConfig
+from nanobot.config.schema import BrowseConfig, ExecToolConfig
 from nanobot.providers.base import LLMProvider
 
 
@@ -30,12 +31,12 @@ class SubagentManager:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         reasoning_effort: str | None = None,
-        brave_api_key: str | None = None,
+        parallel_api_key: str | None = None,
         web_proxy: str | None = None,
+        browse_config: "BrowseConfig | None" = None,
         exec_config: "ExecToolConfig | None" = None,
         restrict_to_workspace: bool = False,
     ):
-        from nanobot.config.schema import ExecToolConfig
         self.provider = provider
         self.workspace = workspace
         self.bus = bus
@@ -43,8 +44,9 @@ class SubagentManager:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.reasoning_effort = reasoning_effort
-        self.brave_api_key = brave_api_key
+        self.parallel_api_key = parallel_api_key
         self.web_proxy = web_proxy
+        self._browse_config = browse_config or BrowseConfig()
         self.exec_config = exec_config or ExecToolConfig()
         self.restrict_to_workspace = restrict_to_workspace
         self._running_tasks: dict[str, asyncio.Task[None]] = {}
@@ -92,6 +94,13 @@ class SubagentManager:
         """Execute the subagent task and announce the result."""
         logger.info("Subagent [{}] starting task: {}", task_id, label)
 
+        # Scoped browser session for this subagent run (created before try for cleanup)
+        browser_session = BrowserSession(
+            proxy=self.web_proxy,
+            headless=self._browse_config.headless,
+            timeout=self._browse_config.timeout,
+        )
+
         try:
             # Build subagent tools (no message tool, no spawn tool)
             tools = ToolRegistry()
@@ -106,9 +115,10 @@ class SubagentManager:
                 restrict_to_workspace=self.restrict_to_workspace,
                 path_append=self.exec_config.path_append,
             ))
-            tools.register(WebSearchTool(api_key=self.brave_api_key, proxy=self.web_proxy))
-            tools.register(WebFetchTool(proxy=self.web_proxy))
-            
+            tools.register(WebSearchTool(api_key=self.parallel_api_key))
+            tools.register(WebFetchTool(api_key=self.parallel_api_key))
+            tools.register(WebBrowseTool(session=browser_session))
+
             system_prompt = self._build_subagent_prompt()
             messages: list[dict[str, Any]] = [
                 {"role": "system", "content": system_prompt},
@@ -176,6 +186,9 @@ class SubagentManager:
             error_msg = f"Error: {str(e)}"
             logger.error("Subagent [{}] failed: {}", task_id, e)
             await self._announce_result(task_id, label, task, error_msg, origin, "error")
+        finally:
+            # Always cleanup subagent browser session
+            await browser_session.close()
 
     async def _announce_result(
         self,
@@ -208,7 +221,7 @@ Summarize this naturally for the user. Keep it brief (1-2 sentences). Do not men
 
         await self.bus.publish_inbound(msg)
         logger.debug("Subagent [{}] announced result to {}:{}", task_id, origin['channel'], origin['chat_id'])
-    
+
     def _build_subagent_prompt(self) -> str:
         """Build a focused system prompt for the subagent."""
         from nanobot.agent.context import ContextBuilder
@@ -230,7 +243,7 @@ Stay focused on the assigned task. Your final response will be reported back to 
             parts.append(f"## Skills\n\nRead SKILL.md with read_file to use a skill.\n\n{skills_summary}")
 
         return "\n\n".join(parts)
-    
+
     async def cancel_by_session(self, session_key: str) -> int:
         """Cancel all subagents for the given session. Returns count cancelled."""
         tasks = [self._running_tasks[tid] for tid in self._session_tasks.get(session_key, [])

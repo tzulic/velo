@@ -22,6 +22,7 @@ from nanobot.agent.llm_helpers import (
 )
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.subagent import SubagentManager
+from nanobot.agent.tools.browse import BrowserSession, WebBrowseTool
 from nanobot.agent.tools.cron import CronTool
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from nanobot.agent.tools.message import MessageTool
@@ -36,7 +37,7 @@ from nanobot.providers.context_limits import estimate_tokens, get_context_window
 from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import ChannelsConfig, ExecToolConfig
+    from nanobot.config.schema import BrowseConfig, ChannelsConfig, ExecToolConfig
     from nanobot.cron.service import CronService
     from nanobot.plugins.manager import PluginManager
 
@@ -66,8 +67,9 @@ class AgentLoop:
         max_tokens: int = 4096,
         memory_window: int = 100,
         reasoning_effort: str | None = None,
-        brave_api_key: str | None = None,
+        parallel_api_key: str | None = None,
         web_proxy: str | None = None,
+        browse_config: "BrowseConfig | None" = None,
         exec_config: ExecToolConfig | None = None,
         cron_service: CronService | None = None,
         restrict_to_workspace: bool = False,
@@ -77,7 +79,7 @@ class AgentLoop:
         plugin_manager: PluginManager | None = None,
         context_window: int | None = None,
     ):
-        from nanobot.config.schema import ExecToolConfig
+        from nanobot.config.schema import BrowseConfig, ExecToolConfig
         self.bus = bus
         self.channels_config = channels_config
         self.provider = provider
@@ -88,8 +90,14 @@ class AgentLoop:
         self.max_tokens = max_tokens
         self.memory_window = memory_window
         self.reasoning_effort = reasoning_effort
-        self.brave_api_key = brave_api_key
+        self.parallel_api_key = parallel_api_key
         self.web_proxy = web_proxy
+        self._browse_config = browse_config or BrowseConfig()
+        self.browser_session = BrowserSession(
+            proxy=web_proxy,
+            headless=self._browse_config.headless,
+            timeout=self._browse_config.timeout,
+        )
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
@@ -107,8 +115,9 @@ class AgentLoop:
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             reasoning_effort=reasoning_effort,
-            brave_api_key=brave_api_key,
+            parallel_api_key=parallel_api_key,
             web_proxy=web_proxy,
+            browse_config=self._browse_config,
             exec_config=self.exec_config,
             restrict_to_workspace=restrict_to_workspace,
         )
@@ -137,8 +146,9 @@ class AgentLoop:
             restrict_to_workspace=self.restrict_to_workspace,
             path_append=self.exec_config.path_append,
         ))
-        self.tools.register(WebSearchTool(api_key=self.brave_api_key, proxy=self.web_proxy))
-        self.tools.register(WebFetchTool(proxy=self.web_proxy))
+        self.tools.register(WebSearchTool(api_key=self.parallel_api_key))
+        self.tools.register(WebFetchTool(api_key=self.parallel_api_key))
+        self.tools.register(WebBrowseTool(session=self.browser_session))
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:
@@ -403,6 +413,11 @@ class AgentLoop:
             except (RuntimeError, BaseExceptionGroup):
                 pass  # MCP SDK cancel scope cleanup is noisy but harmless
             self._mcp_stack = None
+
+    async def cleanup(self) -> None:
+        """Async cleanup for all resources that need await."""
+        await self.browser_session.close()
+        await self.close_mcp()
 
     def stop(self) -> None:
         """Stop the agent loop."""

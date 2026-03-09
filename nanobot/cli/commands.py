@@ -222,8 +222,8 @@ def onboard():
 
 def _make_provider(config: Config):
     """Create the appropriate LLM provider from config."""
-    from nanobot.providers.openai_codex_provider import OpenAICodexProvider
     from nanobot.providers.azure_openai_provider import AzureOpenAIProvider
+    from nanobot.providers.openai_codex_provider import OpenAICodexProvider
 
     model = config.agents.defaults.model
     provider_name = config.get_provider_name(model)
@@ -249,7 +249,7 @@ def _make_provider(config: Config):
             console.print("Set them in ~/.nanobot/config.json under providers.azure_openai section")
             console.print("Use the model field to specify the deployment name.")
             raise typer.Exit(1)
-        
+
         return AzureOpenAIProvider(
             api_key=p.api_key,
             api_base=p.api_base,
@@ -378,8 +378,9 @@ def gateway(
         max_iterations=config.agents.defaults.max_tool_iterations,
         memory_window=config.agents.defaults.memory_window,
         reasoning_effort=config.agents.defaults.reasoning_effort,
-        brave_api_key=config.tools.web.search.api_key or None,
+        parallel_api_key=config.tools.web.search.api_key or None,
         web_proxy=config.tools.web.proxy or None,
+        browse_config=config.tools.web.browse,
         exec_config=config.tools.exec,
         cron_service=cron,
         restrict_to_workspace=config.tools.restrict_to_workspace,
@@ -515,7 +516,7 @@ def gateway(
             console.print("\nShutting down...")
         finally:
             await plugin_mgr.shutdown()
-            await agent.close_mcp()
+            await agent.cleanup()
             heartbeat.stop()
             cron.stop()
             agent.stop()
@@ -576,8 +577,9 @@ def agent(
         max_iterations=config.agents.defaults.max_tool_iterations,
         memory_window=config.agents.defaults.memory_window,
         reasoning_effort=config.agents.defaults.reasoning_effort,
-        brave_api_key=config.tools.web.search.api_key or None,
+        parallel_api_key=config.tools.web.search.api_key or None,
         web_proxy=config.tools.web.proxy or None,
+        browse_config=config.tools.web.browse,
         exec_config=config.tools.exec,
         cron_service=cron,
         restrict_to_workspace=config.tools.restrict_to_workspace,
@@ -613,7 +615,7 @@ def agent(
                 _print_agent_response(response, render_markdown=markdown)
             finally:
                 await plugin_mgr.shutdown()
-                await agent_loop.close_mcp()
+                await agent_loop.cleanup()
 
         asyncio.run(run_once())
     else:
@@ -719,7 +721,7 @@ def agent(
                 agent_loop.stop()
                 outbound_task.cancel()
                 await asyncio.gather(bus_task, outbound_task, return_exceptions=True)
-                await agent_loop.close_mcp()
+                await agent_loop.cleanup()
 
         asyncio.run(run_interactive())
 

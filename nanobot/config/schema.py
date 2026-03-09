@@ -289,8 +289,15 @@ class GatewayConfig(Base):
 class WebSearchConfig(Base):
     """Web search tool configuration."""
 
-    api_key: str = ""  # Brave Search API key
+    api_key: str = ""  # Parallel.ai API key (from platform.parallel.ai)
     max_results: int = 5
+
+
+class BrowseConfig(Base):
+    """Browser tool configuration."""
+
+    headless: bool = True
+    timeout: int = 30  # seconds
 
 
 class WebToolsConfig(Base):
@@ -300,6 +307,7 @@ class WebToolsConfig(Base):
         None  # HTTP/SOCKS5 proxy URL, e.g. "http://127.0.0.1:7890" or "socks5://127.0.0.1:1080"
     )
     search: WebSearchConfig = Field(default_factory=WebSearchConfig)
+    browse: BrowseConfig = Field(default_factory=BrowseConfig)
 
 
 class ExecToolConfig(Base):
