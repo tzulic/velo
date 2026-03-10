@@ -248,6 +248,16 @@ class ProviderConfig(Base):
     extra_headers: dict[str, str] | None = None  # Custom headers (e.g. APP-Code for AiHubMix)
 
 
+class CliProviderConfig(ProviderConfig):
+    """Claude CLI provider configuration (uses Claude Max subscription, no API key needed)."""
+
+    api_key: str = "cli"  # Sentinel value — not a real key, just satisfies ProviderConfig interface
+    model: str = "sonnet"  # CLI model alias: sonnet, opus, haiku, or versioned name
+    timeout_s: int = 300   # Max seconds to wait for CLI subprocess
+    permission_mode: str = "bypassPermissions"  # Claude CLI permission mode
+    cli_path: str = "claude"  # Path to the claude binary
+
+
 class ProvidersConfig(Base):
     """Configuration for LLM providers."""
 
@@ -269,6 +279,7 @@ class ProvidersConfig(Base):
     volcengine: ProviderConfig = Field(default_factory=ProviderConfig)  # VolcEngine (火山引擎)
     openai_codex: ProviderConfig = Field(default_factory=ProviderConfig)  # OpenAI Codex (OAuth)
     github_copilot: ProviderConfig = Field(default_factory=ProviderConfig)  # Github Copilot (OAuth)
+    claude_cli: CliProviderConfig = Field(default_factory=CliProviderConfig)  # Claude CLI (Claude Max subscription)
 
 
 class HeartbeatConfig(Base):

@@ -77,7 +77,8 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         env_key="",
         display_name="Custom",
         litellm_prefix="",
-        is_direct=True,
+        is_gateway=True,  # treat as gateway so find_gateway() picks it up
+        is_direct=True,   # signals: use openai-compatible format, no model prefixing
     ),
 
     # === Azure OpenAI (direct API calls with API version 2024-10-21) =====
@@ -360,6 +361,27 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         strip_model_prefix=False,
         model_overrides=(),
     ),
+    # === Claude CLI (invokes `claude` binary directly via Claude Max subscription) =
+    # No API key needed — uses OAuth credentials from `claude auth login`.
+    # Selected only when provider = "claude_cli" is set explicitly in config.
+    ProviderSpec(
+        name="claude_cli",
+        keywords=("claude_cli",),
+        env_key="",              # No API key — uses OAuth via the CLI
+        display_name="Claude CLI",
+        litellm_prefix="",
+        skip_prefixes=(),
+        env_extras=(),
+        is_gateway=False,
+        is_local=False,
+        detect_by_key_prefix="",
+        detect_by_base_keyword="",
+        default_api_base="",
+        strip_model_prefix=False,
+        model_overrides=(),
+        is_oauth=True,           # Bypasses the "No API key configured" guard
+    ),
+
     # === Auxiliary (not a primary LLM provider) ============================
     # Groq: mainly used for Whisper voice transcription, also usable for LLM.
     # Needs "groq/" prefix for LiteLLM routing. Placed last — it rarely wins fallback.

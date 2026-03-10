@@ -233,6 +233,17 @@ def _make_provider(config: Config):
     if provider_name == "openai_codex" or model.startswith("openai-codex/"):
         return OpenAICodexProvider(default_model=model)
 
+    # Claude CLI: invokes the claude binary directly via Claude Max subscription
+    if provider_name == "claude_cli":
+        from nanobot.providers.cli_provider import CliProvider
+        cli_cfg = config.providers.claude_cli
+        return CliProvider(
+            model=cli_cfg.model,
+            timeout_s=cli_cfg.timeout_s,
+            permission_mode=cli_cfg.permission_mode,
+            cli_path=cli_cfg.cli_path,
+        )
+
     # Custom: direct OpenAI-compatible endpoint, bypasses LiteLLM
     from nanobot.providers.custom_provider import CustomProvider
     if provider_name == "custom":

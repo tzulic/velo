@@ -282,6 +282,9 @@ class LiteLLMProvider(LLMProvider):
 
         self._apply_model_overrides(resolved, kwargs)
 
+        if self._gateway and self._gateway.is_direct:
+            # Custom OpenAI-compatible endpoint: force OpenAI client format
+            kwargs["custom_llm_provider"] = "openai"
         if self.api_key:
             kwargs["api_key"] = self.api_key
         if self.api_base:
