@@ -1,11 +1,14 @@
 """AgentExecutor bridge — connects A2A requests to the nanobot agent loop."""
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Part, TaskState, TextPart
+
+if TYPE_CHECKING:
+    from nanobot.agent.loop import AgentLoop
 
 
 class NanobotAgentExecutor(AgentExecutor):
@@ -16,13 +19,13 @@ class NanobotAgentExecutor(AgentExecutor):
     is isolated per task.
     """
 
-    def __init__(self, agent_loop: Any) -> None:
+    def __init__(self, agent_loop: "AgentLoop") -> None:
         """Initialise with an AgentLoop instance.
 
         Args:
             agent_loop: AgentLoop instance with a ``process_direct`` coroutine.
         """
-        self._loop = agent_loop
+        self._loop: "AgentLoop" = agent_loop
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Execute an incoming A2A task.
@@ -43,7 +46,7 @@ class NanobotAgentExecutor(AgentExecutor):
                 content=text,
                 session_key=session_key,
                 channel="a2a",
-                chat_id=context.task_id or session_key,
+                chat_id=session_key,
             )
             updater.update_status(
                 TaskState.completed,

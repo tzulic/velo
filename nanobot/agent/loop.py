@@ -82,7 +82,6 @@ class AgentLoop:
         a2a_peers: "list[A2APeerConfig] | None" = None,
     ):
         from nanobot.config.schema import BrowseConfig, ExecToolConfig
-        self._a2a_peers = a2a_peers or []
         self.bus = bus
         self.channels_config = channels_config
         self.provider = provider
@@ -135,10 +134,10 @@ class AgentLoop:
         self._consolidation_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
         self._processing_lock = asyncio.Lock()
-        self._register_default_tools()
+        self._register_default_tools(a2a_peers)
         self._register_plugin_tools()
 
-    def _register_default_tools(self) -> None:
+    def _register_default_tools(self, a2a_peers: "list[A2APeerConfig] | None" = None) -> None:
         """Register the default set of tools."""
         allowed_dir = self.workspace if self.restrict_to_workspace else None
         for cls in (ReadFileTool, WriteFileTool, EditFileTool, ListDirTool):
@@ -157,9 +156,9 @@ class AgentLoop:
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
         self.tools.register(SearchToolsTool(self.tools))
-        if self._a2a_peers:
+        if a2a_peers:
             from nanobot.agent.tools.a2a_call import CallAgentTool
-            self.tools.register(CallAgentTool(peers=self._a2a_peers))
+            self.tools.register(CallAgentTool(peers=a2a_peers))
 
     def _register_plugin_tools(self) -> None:
         """Register tools from all loaded plugins, respecting their deferred flag."""

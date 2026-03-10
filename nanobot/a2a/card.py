@@ -2,12 +2,15 @@
 
 import socket
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from a2a.types import AgentCapabilities, AgentCard, AgentSkill
 
+if TYPE_CHECKING:
+    from nanobot.config.schema import A2AConfig
 
-def build_agent_card(a2a_config: Any, workspace: Path) -> AgentCard:
+
+def build_agent_card(a2a_config: "A2AConfig", workspace: Path) -> AgentCard:
     """Build an AgentCard from A2A config and available skills.
 
     Args:

@@ -389,7 +389,7 @@ def gateway(
         channels_config=config.channels,
         plugin_manager=plugin_mgr,
         context_window=config.agents.defaults.context_window,
-        a2a_peers=config.a2a.peers or None,
+        a2a_peers=config.a2a.peers,
     )
 
     # Set cron callback (needs agent)

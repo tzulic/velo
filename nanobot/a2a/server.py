@@ -1,7 +1,7 @@
 """A2A ASGI server with Bearer-auth middleware and uvicorn integration."""
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import uvicorn
 from a2a.server.apps import A2AStarletteApplication
@@ -13,6 +13,10 @@ from starlette.responses import Response
 
 from .card import build_agent_card
 from .executor import NanobotAgentExecutor
+
+if TYPE_CHECKING:
+    from nanobot.agent.loop import AgentLoop
+    from nanobot.config.schema import A2AConfig
 
 
 class _BearerAuthMiddleware(BaseHTTPMiddleware):
@@ -49,7 +53,7 @@ class _BearerAuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def build_a2a_app(a2a_config: Any, workspace: Path, agent_loop: Any) -> Any:
+def _build_a2a_app(a2a_config: "A2AConfig", workspace: Path, agent_loop: "AgentLoop") -> Any:
     """Build the A2A ASGI application with auth middleware.
 
     Args:
@@ -72,7 +76,7 @@ def build_a2a_app(a2a_config: Any, workspace: Path, agent_loop: Any) -> Any:
     return _BearerAuthMiddleware(starlette_app, a2a_config.api_key)
 
 
-async def start_a2a_server(a2a_config: Any, workspace: Path, agent_loop: Any) -> None:
+async def start_a2a_server(a2a_config: "A2AConfig", workspace: Path, agent_loop: "AgentLoop") -> None:
     """Run the A2A server as an asyncio task alongside the main gateway.
 
     Installs no signal handlers to avoid conflicts with the gateway's signal
@@ -83,7 +87,7 @@ async def start_a2a_server(a2a_config: Any, workspace: Path, agent_loop: Any) ->
         workspace: Path to nanobot workspace.
         agent_loop: AgentLoop instance for processing tasks.
     """
-    app = build_a2a_app(a2a_config, workspace, agent_loop)
+    app = _build_a2a_app(a2a_config, workspace, agent_loop)
     config = uvicorn.Config(
         app,
         host="0.0.0.0",
