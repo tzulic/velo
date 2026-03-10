@@ -88,6 +88,7 @@ class AzureOpenAIProvider(LLMProvider):
         max_tokens: int = 4096,
         temperature: float = 0.7,
         reasoning_effort: str | None = None,
+        tool_choice: str = "auto",
     ) -> dict[str, Any]:
         """Prepare the request payload with Azure OpenAI 2024-10-21 compliance."""
         payload: dict[str, Any] = {
@@ -106,7 +107,7 @@ class AzureOpenAIProvider(LLMProvider):
 
         if tools:
             payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+            payload["tool_choice"] = tool_choice
 
         return payload
 
@@ -118,6 +119,7 @@ class AzureOpenAIProvider(LLMProvider):
         max_tokens: int = 4096,
         temperature: float = 0.7,
         reasoning_effort: str | None = None,
+        tool_choice: str = "auto",
     ) -> LLMResponse:
         """
         Send a chat completion request to Azure OpenAI.
@@ -129,6 +131,7 @@ class AzureOpenAIProvider(LLMProvider):
             max_tokens: Maximum tokens in response (mapped to max_completion_tokens).
             temperature: Sampling temperature.
             reasoning_effort: Optional reasoning effort parameter.
+            tool_choice: Tool selection mode ("auto", "required", "none").
 
         Returns:
             LLMResponse with content and/or tool calls.
@@ -137,7 +140,7 @@ class AzureOpenAIProvider(LLMProvider):
         url = self._build_chat_url(deployment_name)
         headers = self._build_headers()
         payload = self._prepare_request_payload(
-            deployment_name, messages, tools, max_tokens, temperature, reasoning_effort
+            deployment_name, messages, tools, max_tokens, temperature, reasoning_effort, tool_choice
         )
 
         try:

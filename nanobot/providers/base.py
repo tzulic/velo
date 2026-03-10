@@ -123,6 +123,7 @@ class LLMProvider(ABC):
         max_tokens: int = 4096,
         temperature: float = 0.7,
         reasoning_effort: str | None = None,
+        tool_choice: str = "auto",
     ) -> LLMResponse:
         """
         Send a chat completion request.
@@ -147,6 +148,7 @@ class LLMProvider(ABC):
         max_tokens: int = 4096,
         temperature: float = 0.7,
         reasoning_effort: str | None = None,
+        tool_choice: str = "auto",
     ) -> AsyncIterator[StreamChunk]:
         """Stream chat completion. Default fallback calls chat() and yields one chunk.
 
@@ -157,6 +159,7 @@ class LLMProvider(ABC):
             max_tokens: Maximum tokens in response.
             temperature: Sampling temperature.
             reasoning_effort: Optional reasoning effort level.
+            tool_choice: Tool selection mode ("auto", "required", "none").
 
         Yields:
             StreamChunk with incremental text or final metadata.
@@ -164,7 +167,7 @@ class LLMProvider(ABC):
         response = await self.chat(
             messages=messages, tools=tools, model=model,
             max_tokens=max_tokens, temperature=temperature,
-            reasoning_effort=reasoning_effort,
+            reasoning_effort=reasoning_effort, tool_choice=tool_choice,
         )
         yield StreamChunk(
             delta=response.content or "",
