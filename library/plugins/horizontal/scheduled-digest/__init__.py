@@ -91,7 +91,6 @@ class _DigestService:
         timezone: IANA timezone name.
         owner_telegram_id: Telegram chat ID for delivery.
         sections: Digest topics to include.
-        channel: Delivery channel name.
     """
 
     def __init__(
@@ -101,14 +100,12 @@ class _DigestService:
         timezone: str,
         owner_telegram_id: str,
         sections: list[str],
-        channel: str,
     ) -> None:
         self._frequency = frequency
         self._time_str = time_str
         self._timezone = timezone
         self._owner_telegram_id = owner_telegram_id
         self._sections = sections
-        self._channel = channel
         self._process_direct: Callable[..., Awaitable[str]] | None = None
         self._task: asyncio.Task[None] | None = None
         self._next_fire: datetime | None = None
@@ -194,6 +191,7 @@ class _DigestService:
             await self._send_digest()
             return "Digest sent successfully."
         except Exception as exc:
+            logger.exception("scheduled_digest.send_now_failed")
             return f"Failed to send digest: {exc}"
 
     def _get_next_str(self) -> str:
@@ -272,7 +270,6 @@ def setup(ctx: PluginContext) -> None:
         timezone=ctx.config.get("timezone", "UTC"),
         owner_telegram_id=ctx.config.get("owner_telegram_id", ""),
         sections=ctx.config.get("sections", []),
-        channel=ctx.config.get("channel", "telegram"),
     )
 
     ctx.register_service(service)

@@ -36,13 +36,18 @@ _CREATE_FTS = (
 )
 
 
-def _open_connection(db_path: Path) -> sqlite3.Connection:
-    """Open a new SQLite connection and create FTS5 tables if needed."""
-    conn = sqlite3.connect(str(db_path))
+def _connect(db_path: Path) -> sqlite3.Connection:
+    """Open a SQLite connection without running DDL."""
+    return sqlite3.connect(str(db_path))
+
+
+def _init_db(db_path: Path) -> None:
+    """Create FTS5 tables once. Called from __init__ only."""
+    conn = _connect(db_path)
     conn.execute(_CREATE_META)
     conn.execute(_CREATE_FTS)
     conn.commit()
-    return conn
+    conn.close()
 
 
 class _KnowledgeDB:
@@ -59,6 +64,7 @@ class _KnowledgeDB:
         self._chunk_size = chunk_size
         # Reason: step < chunk_size creates overlap between consecutive chunks
         self._step = max(chunk_size - chunk_overlap, 1)
+        _init_db(db_path)  # Create tables once; subsequent _connect() calls skip DDL
 
     def _chunk(self, text: str) -> list[str]:
         """Split text into overlapping fixed-size chunks."""
@@ -80,34 +86,43 @@ class _KnowledgeDB:
                 return ""
         return path.read_text(errors="replace")
 
+    def _upsert_chunks(self, key: str, text: str, mtime: float) -> int:
+        """Delete existing chunks for key and insert new ones. Returns chunk count."""
+        chunks = self._chunk(text)
+        conn = _connect(self._db_path)
+        try:
+            conn.execute("DELETE FROM docs WHERE path = ?", (key,))
+            conn.executemany(
+                "INSERT INTO docs(path, chunk_id, content) VALUES (?, ?, ?)",
+                [(key, i, c) for i, c in enumerate(chunks)],
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO doc_meta(path, mtime, indexed_at) VALUES (?, ?, ?)",
+                (key, mtime, datetime.now(timezone.utc).isoformat()),
+            )
+            conn.commit()
+            return len(chunks)
+        finally:
+            conn.close()
+
     def index_file(self, path: Path) -> int:
         """Index a local file; skips if mtime unchanged. Returns chunk count."""
         mtime = path.stat().st_mtime
-        conn = _open_connection(self._db_path)
+        conn = _connect(self._db_path)
         try:
             row = conn.execute(
                 "SELECT mtime FROM doc_meta WHERE path = ?", (str(path),)
             ).fetchone()
-            if row and abs(row[0] - mtime) < 0.01:
-                return 0
-            text = self._read_file(path)
-            if not text.strip():
-                return 0
-            chunks = self._chunk(text)
-            conn.execute("DELETE FROM docs WHERE path = ?", (str(path),))
-            conn.executemany(
-                "INSERT INTO docs(path, chunk_id, content) VALUES (?, ?, ?)",
-                [(str(path), i, c) for i, c in enumerate(chunks)],
-            )
-            conn.execute(
-                "INSERT OR REPLACE INTO doc_meta(path, mtime, indexed_at) VALUES (?, ?, ?)",
-                (str(path), mtime, datetime.now(timezone.utc).isoformat()),
-            )
-            conn.commit()
-            logger.info("knowledge_base.file_indexed: %s (%d chunks)", path.name, len(chunks))
-            return len(chunks)
         finally:
             conn.close()
+        if row and abs(row[0] - mtime) < 0.01:
+            return 0
+        text = self._read_file(path)
+        if not text.strip():
+            return 0
+        count = self._upsert_chunks(str(path), text, mtime)
+        logger.info("knowledge_base.file_indexed: %s (%d chunks)", path.name, count)
+        return count
 
     def index_url(self, url: str) -> int:
         """Fetch a URL and index its text content. Returns chunk count."""
@@ -116,27 +131,13 @@ class _KnowledgeDB:
             text = resp.read().decode("utf-8", errors="replace")
         if not text.strip():
             return 0
-        chunks = self._chunk(text)
-        conn = _open_connection(self._db_path)
-        try:
-            conn.execute("DELETE FROM docs WHERE path = ?", (url,))
-            conn.executemany(
-                "INSERT INTO docs(path, chunk_id, content) VALUES (?, ?, ?)",
-                [(url, i, c) for i, c in enumerate(chunks)],
-            )
-            conn.execute(
-                "INSERT OR REPLACE INTO doc_meta(path, mtime, indexed_at) VALUES (?, ?, ?)",
-                (url, time.time(), datetime.now(timezone.utc).isoformat()),
-            )
-            conn.commit()
-            logger.info("knowledge_base.url_indexed: %s (%d chunks)", url[:60], len(chunks))
-            return len(chunks)
-        finally:
-            conn.close()
+        count = self._upsert_chunks(url, text, time.time())
+        logger.info("knowledge_base.url_indexed: %s (%d chunks)", url[:60], count)
+        return count
 
     def search(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         """Full-text search using FTS5 BM25 ranking. Returns list of result dicts."""
-        conn = _open_connection(self._db_path)
+        conn = _connect(self._db_path)
         try:
             rows = conn.execute(
                 "SELECT path, content, rank FROM docs WHERE docs MATCH ? ORDER BY rank LIMIT ?",
@@ -148,7 +149,7 @@ class _KnowledgeDB:
 
     def get_stats(self) -> dict[str, Any]:
         """Return doc_count and last_indexed timestamp."""
-        conn = _open_connection(self._db_path)
+        conn = _connect(self._db_path)
         try:
             count = conn.execute("SELECT COUNT(*) FROM doc_meta").fetchone()[0]
             last = conn.execute("SELECT MAX(indexed_at) FROM doc_meta").fetchone()[0]
@@ -186,7 +187,7 @@ class SearchKnowledgeTool(Tool):
         """Execute full-text search and return formatted results."""
         query = str(kwargs.get("query", ""))
         limit = int(kwargs.get("limit", 5))
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         results = await loop.run_in_executor(None, self._db.search, query, limit)
         if not results:
             return "No results found."
@@ -226,7 +227,7 @@ class AddDocumentTool(Tool):
     async def execute(self, **kwargs: Any) -> str:
         """Index a document from a file path or URL and return confirmation."""
         target = str(kwargs.get("path", ""))
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         if target.startswith("http://") or target.startswith("https://"):
             count = await loop.run_in_executor(None, self._db.index_url, target)
             return f"Indexed URL: {target} ({count} chunks)"
@@ -258,7 +259,7 @@ def setup(ctx: PluginContext) -> None:
         if not doc_dir.is_dir():
             logger.warning("knowledge_base.doc_dir_not_found: %s", doc_directory)
             return
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         count = 0
         for path in sorted(doc_dir.rglob("*")):
             if count >= max_documents:

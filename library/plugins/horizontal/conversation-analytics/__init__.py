@@ -64,9 +64,7 @@ class _AnalyticsStore:
 
     def _ensure_day(self, key: str) -> _DayStats:
         """Get or create stats entry for a date key."""
-        if key not in self._data:
-            self._data[key] = _DayStats()
-        return self._data[key]
+        return self._data.setdefault(key, _DayStats())
 
     def record_message(self) -> None:
         """Increment today's outgoing message counter."""
@@ -152,8 +150,6 @@ class _AnalyticsStore:
     def load(self) -> None:
         """Read analytics data from workspace/analytics.json if it exists."""
         path = self._workspace / "analytics.json"
-        if not path.exists():
-            return
         try:
             raw: dict[str, Any] = json.loads(path.read_text())
             for key, val in raw.items():
@@ -163,7 +159,7 @@ class _AnalyticsStore:
                     escalations=val.get("escalations", 0),
                 )
             logger.info("conversation_analytics.load_completed: %d days", len(self._data))
-        except (OSError, json.JSONDecodeError):
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
             logger.exception("conversation_analytics.load_failed")
 
 
@@ -261,4 +257,4 @@ def setup(ctx: PluginContext) -> None:
     ctx.register_tool(GetAnalyticsTool(store))
     ctx.add_context_provider(store.get_today_summary)
 
-    logger.debug("conversation_analytics.setup_completed: persist_every=%d", persist_every)
+    logger.debug("conversation_analytics.setup_completed: persist_every=%d", int(persist_every))
