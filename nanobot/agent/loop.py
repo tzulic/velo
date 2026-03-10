@@ -38,7 +38,7 @@ from nanobot.providers.context_limits import estimate_tokens, get_context_window
 from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import BrowseConfig, ChannelsConfig, ExecToolConfig
+    from nanobot.config.schema import A2APeerConfig, BrowseConfig, ChannelsConfig, ExecToolConfig
     from nanobot.cron.service import CronService
     from nanobot.plugins.manager import PluginManager
 
@@ -79,8 +79,10 @@ class AgentLoop:
         channels_config: ChannelsConfig | None = None,
         plugin_manager: PluginManager | None = None,
         context_window: int | None = None,
+        a2a_peers: "list[A2APeerConfig] | None" = None,
     ):
         from nanobot.config.schema import BrowseConfig, ExecToolConfig
+        self._a2a_peers = a2a_peers or []
         self.bus = bus
         self.channels_config = channels_config
         self.provider = provider
@@ -155,6 +157,9 @@ class AgentLoop:
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
         self.tools.register(SearchToolsTool(self.tools))
+        if self._a2a_peers:
+            from nanobot.agent.tools.a2a_call import CallAgentTool
+            self.tools.register(CallAgentTool(peers=self._a2a_peers))
 
     def _register_plugin_tools(self) -> None:
         """Register tools from all loaded plugins, respecting their deferred flag."""
@@ -360,7 +365,7 @@ class AgentLoop:
         while self._running:
             try:
                 msg = await asyncio.wait_for(self.bus.consume_inbound(), timeout=1.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
             if msg.content.strip().lower() == "/stop":

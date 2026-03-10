@@ -389,6 +389,7 @@ def gateway(
         channels_config=config.channels,
         plugin_manager=plugin_mgr,
         context_window=config.agents.defaults.context_window,
+        a2a_peers=config.a2a.peers or None,
     )
 
     # Set cron callback (needs agent)
@@ -508,10 +509,16 @@ def gateway(
 
             await cron.start()
             await heartbeat.start()
-            await asyncio.gather(
-                agent.run(),
-                channels.start_all(),
-            )
+
+            gather_tasks = [agent.run(), channels.start_all()]
+            if config.a2a.enabled:
+                from nanobot.a2a.server import start_a2a_server
+                console.print(f"[green]✓[/green] A2A server: port {config.a2a.port}")
+                gather_tasks.append(
+                    start_a2a_server(config.a2a, config.workspace_path, agent)
+                )
+
+            await asyncio.gather(*gather_tasks)
         except KeyboardInterrupt:
             console.print("\nShutting down...")
         finally:
@@ -672,7 +679,7 @@ def agent(
                         elif msg.content:
                             console.print()
                             _print_agent_response(msg.content, render_markdown=markdown)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         continue
                     except asyncio.CancelledError:
                         break

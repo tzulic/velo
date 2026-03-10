@@ -10,7 +10,6 @@ import pytest
 from nanobot.agent.tools.base import Tool
 from nanobot.plugins.types import HOOKS, HookEntry, PluginContext
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

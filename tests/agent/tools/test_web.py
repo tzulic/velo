@@ -7,7 +7,6 @@ import pytest
 
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 
-
 # ---------------------------------------------------------------------------
 # WebSearchTool
 # ---------------------------------------------------------------------------
