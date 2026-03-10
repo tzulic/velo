@@ -202,7 +202,7 @@ class MatrixChannel(BaseChannel):
             try:
                 await asyncio.wait_for(asyncio.shield(self._sync_task),
                                        timeout=self.config.sync_stop_grace_seconds)
-            except (asyncio.TimeoutError, asyncio.CancelledError):
+            except (TimeoutError, asyncio.CancelledError):
                 self._sync_task.cancel()
                 try:
                     await self._sync_task

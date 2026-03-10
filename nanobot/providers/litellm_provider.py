@@ -217,6 +217,7 @@ class LiteLLMProvider(LLMProvider):
         max_tokens: int = 4096,
         temperature: float = 0.7,
         reasoning_effort: str | None = None,
+        tool_choice: str = "auto",
     ) -> LLMResponse:
         """
         Send a chat completion request via LiteLLM.
@@ -227,12 +228,13 @@ class LiteLLMProvider(LLMProvider):
             model: Model identifier (e.g., 'anthropic/claude-sonnet-4-5').
             max_tokens: Maximum tokens in response.
             temperature: Sampling temperature.
+            tool_choice: Tool selection mode ("auto", "required", "none").
 
         Returns:
             LLMResponse with content and/or tool calls.
         """
         kwargs = self._build_stream_kwargs(
-            messages, tools, model, max_tokens, temperature, reasoning_effort,
+            messages, tools, model, max_tokens, temperature, reasoning_effort, tool_choice,
         )
 
         try:
@@ -256,6 +258,7 @@ class LiteLLMProvider(LLMProvider):
         max_tokens: int,
         temperature: float,
         reasoning_effort: str | None,
+        tool_choice: str = "auto",
     ) -> dict[str, Any]:
         """Build kwargs for acompletion, shared between chat() and chat_stream().
 
@@ -293,7 +296,7 @@ class LiteLLMProvider(LLMProvider):
             kwargs["drop_params"] = True
         if tools:
             kwargs["tools"] = tools
-            kwargs["tool_choice"] = "auto"
+            kwargs["tool_choice"] = tool_choice
 
         return kwargs
 
@@ -305,6 +308,7 @@ class LiteLLMProvider(LLMProvider):
         max_tokens: int = 4096,
         temperature: float = 0.7,
         reasoning_effort: str | None = None,
+        tool_choice: str = "auto",
     ) -> AsyncIterator[StreamChunk]:
         """Stream chat completion via LiteLLM.
 
@@ -315,12 +319,13 @@ class LiteLLMProvider(LLMProvider):
             max_tokens: Maximum tokens in response.
             temperature: Sampling temperature.
             reasoning_effort: Optional reasoning effort level.
+            tool_choice: Tool selection mode ("auto", "required", "none").
 
         Yields:
             StreamChunk with incremental deltas and final metadata.
         """
         kwargs = self._build_stream_kwargs(
-            messages, tools, model, max_tokens, temperature, reasoning_effort,
+            messages, tools, model, max_tokens, temperature, reasoning_effort, tool_choice,
         )
         kwargs["stream"] = True
 

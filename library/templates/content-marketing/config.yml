@@ -1,0 +1,8 @@
+plugins:
+  knowledge-base:
+    enabled: true
+    doc_directory: ""
+    extensions: [".md", ".txt", ".pdf"]
+  conversation-analytics:
+    enabled: true
+    persist_every_n_messages: 5

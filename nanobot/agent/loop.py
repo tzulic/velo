@@ -38,7 +38,7 @@ from nanobot.providers.context_limits import estimate_tokens, get_context_window
 from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import BrowseConfig, ChannelsConfig, ExecToolConfig
+    from nanobot.config.schema import A2APeerConfig, BrowseConfig, ChannelsConfig, ExecToolConfig
     from nanobot.cron.service import CronService
     from nanobot.plugins.manager import PluginManager
 
@@ -79,6 +79,7 @@ class AgentLoop:
         channels_config: ChannelsConfig | None = None,
         plugin_manager: PluginManager | None = None,
         context_window: int | None = None,
+        a2a_peers: "list[A2APeerConfig] | None" = None,
     ):
         from nanobot.config.schema import BrowseConfig, ExecToolConfig
         self.bus = bus
@@ -133,10 +134,10 @@ class AgentLoop:
         self._consolidation_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
         self._processing_lock = asyncio.Lock()
-        self._register_default_tools()
+        self._register_default_tools(a2a_peers)
         self._register_plugin_tools()
 
-    def _register_default_tools(self) -> None:
+    def _register_default_tools(self, a2a_peers: "list[A2APeerConfig] | None" = None) -> None:
         """Register the default set of tools."""
         allowed_dir = self.workspace if self.restrict_to_workspace else None
         for cls in (ReadFileTool, WriteFileTool, EditFileTool, ListDirTool):
@@ -155,6 +156,9 @@ class AgentLoop:
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
         self.tools.register(SearchToolsTool(self.tools))
+        if a2a_peers:
+            from nanobot.agent.tools.a2a_call import CallAgentTool
+            self.tools.register(CallAgentTool(peers=a2a_peers))
 
     def _register_plugin_tools(self) -> None:
         """Register tools from all loaded plugins, respecting their deferred flag."""
@@ -360,7 +364,7 @@ class AgentLoop:
         while self._running:
             try:
                 msg = await asyncio.wait_for(self.bus.consume_inbound(), timeout=1.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
             if msg.content.strip().lower() == "/stop":

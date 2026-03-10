@@ -286,6 +286,25 @@ class GatewayConfig(Base):
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
 
 
+class A2APeerConfig(Base):
+    """A peer A2A agent that this nanobot can delegate tasks to."""
+
+    name: str
+    url: str  # e.g. "http://192.168.1.2:18791"
+    api_key: str = ""  # Bearer token to send when calling this peer
+
+
+class A2AConfig(Base):
+    """A2A protocol server + client configuration."""
+
+    enabled: bool = False
+    port: int = 18791
+    api_key: str = ""  # Bearer token callers must present (empty = no auth)
+    agent_name: str = ""  # Shown in AgentCard; defaults to hostname
+    agent_description: str = ""  # Shown in AgentCard
+    peers: list[A2APeerConfig] = Field(default_factory=list)
+
+
 class WebSearchConfig(Base):
     """Web search tool configuration."""
 
@@ -348,6 +367,7 @@ class Config(BaseSettings):
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     plugins: dict[str, Any] = Field(default_factory=dict)
+    a2a: A2AConfig = Field(default_factory=A2AConfig)
 
     @property
     def workspace_path(self) -> Path:

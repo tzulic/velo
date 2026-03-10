@@ -10,7 +10,6 @@ import pytest
 from nanobot.agent.context import ContextBuilder
 from nanobot.plugins.manager import PluginManager
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
