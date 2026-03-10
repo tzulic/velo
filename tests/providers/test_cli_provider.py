@@ -247,6 +247,27 @@ class TestChat:
         assert result.finish_reason == "stop"
 
     @pytest.mark.asyncio
+    async def test_session_collision_retries_with_resume(self):
+        """When CLI returns 'already in use', retries automatically with --resume."""
+        p = CliProvider()
+        captured: list[list[str]] = []
+        collision_stderr = "Error: Session ID abc is already in use."
+
+        async def _capture(cmd):
+            captured.append(cmd)
+            if "--session-id" in cmd:
+                return "", collision_stderr  # first call: collision
+            return RESULT_JSON, ""  # retry with --resume: success
+
+        with patch.object(p, "_run_cli", new=_capture):
+            result = await p.chat(MESSAGES)
+
+        assert len(captured) == 2
+        assert "--session-id" in captured[0]
+        assert "--resume" in captured[1]
+        assert result.content == "Four."
+
+    @pytest.mark.asyncio
     async def test_second_call_uses_resume(self):
         """Second call with same session uses --resume flag."""
         p = CliProvider()
@@ -265,8 +286,8 @@ class TestChat:
         assert "--session-id" not in captured[1]
 
     @pytest.mark.asyncio
-    async def test_model_override_used(self):
-        """Model override is passed to the CLI command."""
+    async def test_model_param_ignored(self):
+        """External model param is ignored; CliProvider always uses its own default_model."""
         p = CliProvider(model="sonnet")
         captured: list[list[str]] = []
 
@@ -278,7 +299,8 @@ class TestChat:
             await p.chat(MESSAGES, model="opus")
 
         idx = captured[0].index("--model")
-        assert captured[0][idx + 1] == "opus"
+        # Should use "sonnet" (provider default), not "opus" (external override)
+        assert captured[0][idx + 1] == "sonnet"
 
 
 # ---------------------------------------------------------------------------

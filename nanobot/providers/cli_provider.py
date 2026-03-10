@@ -78,7 +78,9 @@ class CliProvider(LLMProvider):
         Returns:
             LLMResponse with text content and no tool calls.
         """
-        resolved_model = model or self.default_model
+        # Always use CliProvider's own model — ignore the external model param,
+        # which is typically the nanobot default (e.g. "anthropic/claude-opus-4-5").
+        resolved_model = self.default_model
         prompt = self._extract_last_user_message(messages)
         if not prompt:
             return LLMResponse(content="(empty prompt)", finish_reason="stop")
@@ -107,6 +109,24 @@ class CliProvider(LLMProvider):
                 finish_reason="error",
                 error_code=classify_error(error_msg),
             )
+
+        # If the session ID is already in use (CLI retains sessions across restarts),
+        # retry with --resume so we continue the existing session instead of failing.
+        if stderr and "is already in use" in stderr and not is_resume:
+            logger.debug("cli_provider.session_collision: retrying with --resume session={}", session_id[:8])
+            self._sessions[session_key] = session_id  # mark as existing
+            cmd = self._build_cmd(prompt, session_id, resolved_model, is_resume=True, system_prompt=None)
+            try:
+                stdout, stderr = await self._run_cli(cmd)
+            except Exception as exc:
+                error_msg = str(exc)
+                logger.error("cli_provider.error: {}", error_msg)
+                from nanobot.providers.errors import classify_error
+                return LLMResponse(
+                    content=f"Error calling claude CLI: {error_msg}",
+                    finish_reason="error",
+                    error_code=classify_error(error_msg),
+                )
 
         if stderr:
             logger.debug("cli_provider.stderr: {}", stderr[:300])
