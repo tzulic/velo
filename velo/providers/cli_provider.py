@@ -29,7 +29,7 @@ class CliProvider(LLMProvider):
     def __init__(
         self,
         model: str = "sonnet",
-        timeout_s: int = 300,
+        timeout_s: int = 900,
         permission_mode: str = "bypassPermissions",
         cli_path: str = "claude",
     ):

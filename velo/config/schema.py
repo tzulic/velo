@@ -254,7 +254,7 @@ class CliProviderConfig(ProviderConfig):
 
     api_key: str = "cli"  # Sentinel value — not a real key, just satisfies ProviderConfig interface
     model: str = "sonnet"  # CLI model alias: sonnet, opus, haiku, or versioned name
-    timeout_s: int = 300   # Max seconds to wait for CLI subprocess
+    timeout_s: int = 900   # Max seconds to wait for CLI subprocess (300s too low for agentic tasks)
     permission_mode: str = "bypassPermissions"  # Claude CLI permission mode
     cli_path: str = "claude"  # Path to the claude binary
 

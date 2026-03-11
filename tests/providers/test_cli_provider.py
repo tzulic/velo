@@ -21,7 +21,7 @@ class TestCliProviderInit:
     def test_defaults(self) -> None:
         p = CliProvider()
         assert p.default_model == "sonnet"
-        assert p.timeout_s == 300
+        assert p.timeout_s == 900
         assert p.permission_mode == "bypassPermissions"
         assert p.cli_path == "claude"
 
