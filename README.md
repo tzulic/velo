@@ -1,24 +1,12 @@
-<div align="center">
-  <img src="velo_logo.png" alt="Volos Velo" width="500">
-  <h1>Volos Velo: AI-Powered Personal Assistant</h1>
-  <p>
-    <a href="https://pypi.org/project/velo-ai/"><img src="https://img.shields.io/pypi/v/velo-ai" alt="PyPI"></a>
-    <a href="https://pepy.tech/project/velo-ai"><img src="https://static.pepy.tech/badge/velo-ai" alt="Downloads"></a>
-    <img src="https://img.shields.io/badge/python-≥3.11-blue" alt="Python">
-    <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
-    <a href="https://volos.io"><img src="https://img.shields.io/badge/Managed%20by-Volos-0066FF?style=flat&logo=cloud&logoColor=white" alt="Volos"></a>
-  </p>
-</div>
-
 🚀 **Volos Velo** is an **ultra-lightweight**, open-source personal AI assistant deployed and managed by Volos.
 
 ⚡️ Runs as a daemon on your Hetzner VPS with minimal footprint. Focus on your life—we handle the infrastructure and AI orchestration.
 
-💎 **Volos handles deployment, updates, and configuration.** You just chat. [Start your free trial](https://volos.io).
+💎 **Volos handles deployment, updates, and configuration.** You just chat.
 
 ## 📢 Latest Updates
 
-- **Volos Managed Service** — Your Velo instance runs on your own Hetzner VPS. Volos handles deployment, updates, and AI orchestration via Claude Agent SDK.
+- **Volos Managed Service** — Your Velo instance runs on your own Hetzner VPS. Volos handles deployment, updates, and AI orchestration.
 - **Multi-Channel Support** — Telegram, Discord, WhatsApp, Slack, Feishu, DingTalk, QQ, Email, Matrix, and more.
 - **MCP Integration** — Connect external tool servers (filesystem, GitHub, databases, APIs) as native agent tools.
 - **Provider Support** — OpenRouter, Anthropic, Azure OpenAI, OpenAI, DeepSeek, Groq, Gemini, Mistral, and 15+ more LLM providers.
@@ -28,11 +16,9 @@
 
 ## Why Volos Velo?
 
-🪶 **Ultra-Lightweight**: ~4,000 lines of core agent code. Runs on €10/mo Hetzner VPS with minimal overhead.
-
 🚀 **Managed for You**: Volos deploys, updates, and maintains your Velo instance. No DevOps required.
 
-🧠 **AI-Orchestrated**: Claude Agent SDK handles skill installation, configuration, and complex workflows—not just chat.
+🧠 **AI-Orchestrated**: Volos handles skill installation, configuration, and complex workflows—not just chat.
 
 💬 **Multi-Channel**: One agent, multiple interfaces—Telegram, Discord, WhatsApp, email, Slack, and more.
 
@@ -71,7 +57,7 @@
 
 ### Option 1: Let Volos Manage It (Recommended)
 
-Sign up at [volos.io](https://volos.io) — Volos handles everything.
+Sign up at [volos.one](https://volos.one) — Volos handles everything.
 
 - €99 setup + €49/mo
 - Your own Hetzner CX23 VPS
