@@ -199,8 +199,6 @@ class QQConfig(Base):
     )  # Allowed user openids (empty = public access)
 
 
-
-
 class ChannelsConfig(Base):
     """Configuration for chat channels."""
 
@@ -230,6 +228,9 @@ class AgentDefaults(Base):
     temperature: float = 0.1
     max_tool_iterations: int = 40
     memory_window: int = 100
+    memory_char_limit: int = 8000  # Soft char limit for MEMORY.md; shown as usage % in context
+    user_char_limit: int = 4000  # Soft char limit for USER.md; shown as usage % in context
+    memory_nudge_interval: int = 20  # Turns between memory nudge reminders
     reasoning_effort: str | None = None  # low / medium / high — enables LLM thinking mode
     context_window: int | None = None  # Override auto-detected context window (tokens)
 
@@ -252,7 +253,9 @@ class ProvidersConfig(Base):
     """Configuration for LLM providers."""
 
     custom: ProviderConfig = Field(default_factory=ProviderConfig)  # Any OpenAI-compatible endpoint
-    azure_openai: ProviderConfig = Field(default_factory=ProviderConfig)  # Azure OpenAI (model = deployment name)
+    azure_openai: ProviderConfig = Field(
+        default_factory=ProviderConfig
+    )  # Azure OpenAI (model = deployment name)
     anthropic: ProviderConfig = Field(default_factory=ProviderConfig)
     openai: ProviderConfig = Field(default_factory=ProviderConfig)
     openrouter: ProviderConfig = Field(default_factory=ProviderConfig)

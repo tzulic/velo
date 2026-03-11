@@ -8,8 +8,18 @@ always: true
 
 ## Structure
 
-- `memory/MEMORY.md` — Long-term facts (preferences, project context, relationships). Always loaded into your context.
-- `memory/HISTORY.md` — Append-only event log. NOT loaded into context. Search it with grep-style tools or in-memory filters. Each entry starts with [YYYY-MM-DD HH:MM].
+Two files store facts; a third is the event log:
+
+- `memory/MEMORY.md` — **Agent notes**: env facts, project context, tool quirks, conventions.
+  Always loaded into context with a usage indicator (`[42% — 3,360/8,000 chars]`).
+- `memory/USER.md` — **User profile**: who the user is — name, role, timezone, preferences,
+  communication style. Also loaded into context with its own usage indicator.
+- `memory/HISTORY.md` — Append-only event log. **NOT** loaded into context. Search with grep.
+  Each entry starts with `[YYYY-MM-DD HH:MM]`.
+
+**Auto-consolidation populates both MEMORY.md and USER.md** — no manual management needed.
+When the session grows large, an LLM call extracts agent notes into MEMORY.md and user profile
+facts into USER.md separately.
 
 ## Search Past Events
 
@@ -25,13 +35,21 @@ Examples:
 
 Prefer targeted command-line search for large history files.
 
-## When to Update MEMORY.md
+## When to Update MEMORY.md or USER.md
 
 Write important facts immediately using `edit_file` or `write_file`:
-- User preferences ("I prefer dark mode")
-- Project context ("The API uses OAuth2")
-- Relationships ("Alice is the project lead")
+
+- `memory/MEMORY.md` — env facts, project structure, API patterns, tool quirks, conventions
+- `memory/USER.md` — user name, role, timezone, preferences, communication style
+
+Example: "I prefer dark mode" → goes in USER.md. "The API uses OAuth2" → goes in MEMORY.md.
 
 ## Auto-consolidation
 
-Old conversations are automatically summarized and appended to HISTORY.md when the session grows large. Long-term facts are extracted to MEMORY.md. You don't need to manage this.
+Old conversations are automatically summarized when the session grows large:
+- Key events appended to `HISTORY.md`
+- Agent notes merged into `MEMORY.md`
+- User profile facts merged into `USER.md`
+
+Usage indicators in the context header (`[X% — N/8,000 chars]`) show when files are filling up.
+The consolidation LLM will compress aggressively when either file exceeds 80% capacity.
