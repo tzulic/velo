@@ -28,11 +28,15 @@ class ContextBuilder:
         self,
         workspace: Path,
         plugin_manager: PluginManager | None = None,
+        memory_limit: int = 8000,
+        user_limit: int = 4000,
     ):
         self.workspace = workspace
         self.memory = MemoryStore(workspace)
         self.skills = SkillsLoader(workspace)
         self._plugin_manager = plugin_manager
+        self._memory_limit = memory_limit
+        self._user_limit = user_limit
 
     async def build_system_prompt(
         self,
@@ -51,7 +55,7 @@ class ContextBuilder:
         if bootstrap:
             parts.append(bootstrap)
 
-        memory = self.memory.get_memory_context()
+        memory = self.memory.get_memory_context(self._memory_limit, self._user_limit)
         if memory:
             parts.append(f"# Memory\n\n{memory}")
 
@@ -119,7 +123,8 @@ You are Velo, a personal AI assistant for the Volos ecosystem.
 
 ## Workspace
 Your workspace is at: {workspace_path}
-- Long-term memory: {workspace_path}/memory/MEMORY.md (write important facts here)
+- Agent notes: {workspace_path}/memory/MEMORY.md (env, projects, conventions — always loaded)
+- User profile: {workspace_path}/memory/USER.md (who the user is — auto-updated at consolidation)
 - History log: {workspace_path}/memory/HISTORY.md (grep-searchable). Each entry starts with [YYYY-MM-DD HH:MM].
 - Custom skills: {workspace_path}/skills/{{skill-name}}/SKILL.md
 
@@ -165,6 +170,7 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
         channel: str | None = None,
         chat_id: str | None = None,
         deferred_tools_hint: str | None = None,
+        memory_nudge: str | None = None,
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call.
 
@@ -176,8 +182,12 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
             channel: Channel identifier for runtime context.
             chat_id: Chat ID for runtime context.
             deferred_tools_hint: Optional summary of deferred tools for the system prompt.
+            memory_nudge: Optional reminder appended to runtime context (stripped from session).
         """
         runtime_ctx = self._build_runtime_context(channel, chat_id)
+        # Reason: nudge is appended to runtime_ctx so _save_turn strips it from session storage.
+        if memory_nudge:
+            runtime_ctx += f"\n{memory_nudge}"
         user_content = self._build_user_content(current_message, media)
 
         # Merge runtime context and user content into a single user message
@@ -219,15 +229,21 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
         return images + [{"type": "text", "text": text}]
 
     def add_tool_result(
-        self, messages: list[dict[str, Any]],
-        tool_call_id: str, tool_name: str, result: str,
+        self,
+        messages: list[dict[str, Any]],
+        tool_call_id: str,
+        tool_name: str,
+        result: str,
     ) -> list[dict[str, Any]]:
         """Add a tool result to the message list."""
-        messages.append({"role": "tool", "tool_call_id": tool_call_id, "name": tool_name, "content": result})
+        messages.append(
+            {"role": "tool", "tool_call_id": tool_call_id, "name": tool_name, "content": result}
+        )
         return messages
 
     def add_assistant_message(
-        self, messages: list[dict[str, Any]],
+        self,
+        messages: list[dict[str, Any]],
         content: str | None,
         tool_calls: list[dict[str, Any]] | None = None,
         reasoning_content: str | None = None,

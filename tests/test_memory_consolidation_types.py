@@ -104,10 +104,12 @@ class TestMemoryConsolidationTypeHandling:
                 ToolCallRequest(
                     id="call_1",
                     name="save_memory",
-                    arguments=json.dumps({
-                        "history_entry": "[2026-01-01] User discussed testing.",
-                        "memory_update": "# Memory\nUser likes testing.",
-                    }),
+                    arguments=json.dumps(
+                        {
+                            "history_entry": "[2026-01-01] User discussed testing.",
+                            "memory_update": "# Memory\nUser likes testing.",
+                        }
+                    ),
                 )
             ],
         )
@@ -159,10 +161,12 @@ class TestMemoryConsolidationTypeHandling:
                 ToolCallRequest(
                     id="call_1",
                     name="save_memory",
-                    arguments=[{
-                        "history_entry": "[2026-01-01] User discussed testing.",
-                        "memory_update": "# Memory\nUser likes testing.",
-                    }],
+                    arguments=[
+                        {
+                            "history_entry": "[2026-01-01] User discussed testing.",
+                            "memory_update": "# Memory\nUser likes testing.",
+                        }
+                    ],
                 )
             ],
         )
@@ -220,3 +224,58 @@ class TestMemoryConsolidationTypeHandling:
         result = await store.consolidate(session, provider, "test-model", memory_window=50)
 
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_user_update_written_to_user_file(self, tmp_path: Path) -> None:
+        """When user_update is provided, it is written to USER.md."""
+        store = MemoryStore(tmp_path)
+        provider = AsyncMock()
+        provider.chat = AsyncMock(
+            return_value=_make_tool_response(
+                history_entry="[2026-01-01] User introduced herself as Alice.",
+                memory_update="# Memory\nProject uses FastAPI.",
+            )
+        )
+        # Patch to include user_update in the tool response args
+        provider.chat = AsyncMock(
+            return_value=LLMResponse(
+                content=None,
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_1",
+                        name="save_memory",
+                        arguments={
+                            "history_entry": "[2026-01-01] User introduced herself.",
+                            "memory_update": "# Memory\nUser is Alice.",
+                            "user_update": "# User Profile\n\nName: Alice. Role: Engineer.",
+                        },
+                    )
+                ],
+            )
+        )
+        session = _make_session(message_count=60)
+
+        result = await store.consolidate(session, provider, "test-model", memory_window=50)
+
+        assert result is True
+        assert store.user_file.exists()
+        assert "Alice" in store.user_file.read_text()
+        assert "Engineer" in store.user_file.read_text()
+
+    @pytest.mark.asyncio
+    async def test_missing_user_update_does_not_create_user_file(self, tmp_path: Path) -> None:
+        """When user_update is absent, USER.md is not created."""
+        store = MemoryStore(tmp_path)
+        provider = AsyncMock()
+        provider.chat = AsyncMock(
+            return_value=_make_tool_response(
+                history_entry="[2026-01-01] Normal session.",
+                memory_update="# Memory\nSome facts.",
+            )
+        )
+        session = _make_session(message_count=60)
+
+        result = await store.consolidate(session, provider, "test-model", memory_window=50)
+
+        assert result is True
+        assert not store.user_file.exists()
