@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from nanobot.providers.base import LLMProvider, LLMResponse, StreamChunk, ToolCallRequest
+from velo.providers.base import LLMProvider, LLMResponse, StreamChunk, ToolCallRequest
 
 
 class FakeProvider(LLMProvider):

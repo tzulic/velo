@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.plugins.manager import PluginManager
-from nanobot.plugins.types import (
+from velo.plugins.manager import PluginManager
+from velo.plugins.types import (
     PluginContext,
     RuntimeRefs,
     ServiceLike,
@@ -184,7 +184,7 @@ class TestPluginManagerRuntime:
         async def on_shutdown_hook() -> None:
             call_order.append(f"hook:svc_stopped={svc.stopped}")
 
-        from nanobot.plugins.types import HookEntry
+        from velo.plugins.types import HookEntry
         mgr._hooks["on_shutdown"].append(HookEntry(callback=on_shutdown_hook))
         mgr._services.append(svc)  # Added twice intentionally for the stop tracking
 

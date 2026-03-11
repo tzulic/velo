@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from nanobot.bus.events import OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.telegram import TelegramChannel
-from nanobot.config.schema import TelegramConfig
+from velo.bus.events import OutboundMessage
+from velo.bus.queue import MessageBus
+from velo.channels.telegram import TelegramChannel
+from velo.config.schema import TelegramConfig
 
 
 class _FakeHTTPXRequest:
@@ -100,9 +100,9 @@ async def test_start_uses_request_proxy_without_builder_proxy(monkeypatch) -> No
     app = _FakeApp(lambda: setattr(channel, "_running", False))
     builder = _FakeBuilder(app)
 
-    monkeypatch.setattr("nanobot.channels.telegram.HTTPXRequest", _FakeHTTPXRequest)
+    monkeypatch.setattr("velo.channels.telegram.HTTPXRequest", _FakeHTTPXRequest)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.Application",
+        "velo.channels.telegram.Application",
         SimpleNamespace(builder=lambda: builder),
     )
 

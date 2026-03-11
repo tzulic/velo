@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.memory import MemoryStore
-from nanobot.providers.base import LLMResponse, ToolCallRequest
+from velo.agent.memory import MemoryStore
+from velo.providers.base import LLMResponse, ToolCallRequest
 
 
 def _make_session(message_count: int = 30, memory_window: int = 50):

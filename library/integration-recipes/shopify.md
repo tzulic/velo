@@ -1,6 +1,6 @@
 # Shopify Integration Recipe
 
-This recipe shows how to connect a nanobot agent to a Shopify store using the
+This recipe shows how to connect a velo agent to a Shopify store using the
 Shopify Admin API MCP server and the webhook-receiver plugin.
 
 ---
@@ -9,7 +9,7 @@ Shopify Admin API MCP server and the webhook-receiver plugin.
 
 - A Shopify store (development store is fine)
 - A Shopify Admin API access token (see below)
-- `nanobot` with the `webhook-receiver` plugin
+- `velo` with the `webhook-receiver` plugin
 
 ---
 
@@ -19,7 +19,7 @@ Shopify Admin API MCP server and the webhook-receiver plugin.
 
 1. Go to Shopify Admin → **Settings** → **Apps** → **Develop apps**
 2. Click **Enable custom apps** if prompted
-3. Click **Create an app**, give it a name (e.g. "nanobot")
+3. Click **Create an app**, give it a name (e.g. "velo")
 4. Go to **Configure Admin API access** and select the scopes you need:
    - Order support: `read_orders`, `read_customers`, `read_fulfillments`
    - Order management: add `write_orders`

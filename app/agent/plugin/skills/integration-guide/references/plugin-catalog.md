@@ -1,6 +1,6 @@
 # Plugin Catalog
 
-This catalog lists all plugins available in the nanobot library.
+This catalog lists all plugins available in the velo library.
 Plugins live under `library/plugins/` and are installed by dropping the plugin
 directory into `{workspace}/plugins/`.
 

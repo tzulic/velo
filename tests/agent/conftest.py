@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.bus.queue import MessageBus
+from velo.agent.loop import AgentLoop
+from velo.bus.queue import MessageBus
 
 
 @pytest.fixture

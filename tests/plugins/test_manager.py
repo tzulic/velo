@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from nanobot.plugins.manager import PluginManager
+from velo.plugins.manager import PluginManager
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -22,8 +22,8 @@ def _write_plugin(base_dir: Path, name: str, setup_code: str) -> Path:
 
 
 _TOOL_PLUGIN = '''
-from nanobot.plugins.types import PluginContext
-from nanobot.agent.tools.base import Tool
+from velo.plugins.types import PluginContext
+from velo.agent.tools.base import Tool
 from typing import Any
 
 class GreetTool(Tool):
@@ -47,14 +47,14 @@ def setup(ctx: PluginContext) -> None:
 '''
 
 _CONTEXT_PLUGIN = '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     ctx.add_context_provider(lambda: "Plugin context from test_context_plugin")
 '''
 
 _HOOK_PLUGIN = '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     def modify_prompt(value: str) -> str:
@@ -63,7 +63,7 @@ def setup(ctx: PluginContext) -> None:
 '''
 
 _FAILING_PLUGIN = '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     raise RuntimeError("Plugin setup intentionally failed!")
@@ -75,7 +75,7 @@ x = 42
 '''
 
 _STARTUP_SHUTDOWN_PLUGIN = '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 _state = {"started": False, "stopped": False}
 
@@ -89,7 +89,7 @@ def setup(ctx: PluginContext) -> None:
 '''
 
 _CONFIG_PLUGIN = '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 captured_config = {}
 
@@ -224,7 +224,7 @@ class TestLoading:
         await mgr.load_all()
         # Import the module to check captured_config
         import importlib
-        mod = importlib.import_module("nanobot_plugin_cfg_plugin")
+        mod = importlib.import_module("velo_plugin_cfg_plugin")
         assert mod.captured_config == {"api_key": "sk-test", "model": "gpt-4"}
 
 
@@ -248,7 +248,7 @@ class TestHookDispatch:
     async def test_pipe_priority_order(self, tmp_path: Path) -> None:
         """Lower priority hooks should run first in pipe()."""
         plugin_code = '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     ctx.on("after_prompt_build", lambda value: value + " [B]", priority=200)
@@ -264,7 +264,7 @@ def setup(ctx: PluginContext) -> None:
     async def test_pipe_skips_failing_callback(self, tmp_path: Path) -> None:
         """A failing callback in pipe() should be skipped, passing value through."""
         plugin_code = '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     def fail_hook(value):
@@ -284,7 +284,7 @@ def setup(ctx: PluginContext) -> None:
     async def test_fire_does_not_propagate_errors(self, tmp_path: Path) -> None:
         """fire() should log but not raise on callback errors."""
         plugin_code = '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     def crash():
@@ -300,7 +300,7 @@ def setup(ctx: PluginContext) -> None:
     async def test_fire_and_forget_runs_all(self, tmp_path: Path) -> None:
         """fire() should run all callbacks even if one fails."""
         plugin_code = '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 results = []
 
@@ -316,7 +316,7 @@ def setup(ctx: PluginContext) -> None:
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
         import importlib
-        mod = importlib.import_module("nanobot_plugin_mixed_fire")
+        mod = importlib.import_module("velo_plugin_mixed_fire")
         assert mod.results == ["ran"]
 
     @pytest.mark.asyncio
@@ -326,7 +326,7 @@ def setup(ctx: PluginContext) -> None:
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
         import importlib
-        mod = importlib.import_module("nanobot_plugin_lifecycle")
+        mod = importlib.import_module("velo_plugin_lifecycle")
         assert mod._state["started"] is True
         assert mod._state["stopped"] is False
         await mgr.shutdown()
@@ -344,7 +344,7 @@ def setup(ctx: PluginContext) -> None:
     async def test_async_hook(self, tmp_path: Path) -> None:
         """Async hook callbacks should work correctly."""
         plugin_code = '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     async def async_modify(value):
@@ -376,7 +376,7 @@ class TestContextAdditions:
     async def test_async_context_provider(self, tmp_path: Path) -> None:
         """Async context providers should work."""
         plugin_code = '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     async def async_ctx():
@@ -393,7 +393,7 @@ def setup(ctx: PluginContext) -> None:
     async def test_failing_provider_skipped(self, tmp_path: Path) -> None:
         """A failing context provider should be skipped."""
         plugin_code = '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     def fail():

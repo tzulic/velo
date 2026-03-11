@@ -20,8 +20,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable
 
-from nanobot.agent.tools.base import Tool
-from nanobot.plugins.types import PluginContext, RuntimeRefs
+from velo.agent.tools.base import Tool
+from velo.plugins.types import PluginContext, RuntimeRefs
 
 logger = logging.getLogger(__name__)
 

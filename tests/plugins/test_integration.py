@@ -7,8 +7,8 @@ from typing import Any
 
 import pytest
 
-from nanobot.agent.context import ContextBuilder
-from nanobot.plugins.manager import PluginManager
+from velo.agent.context import ContextBuilder
+from velo.plugins.manager import PluginManager
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -23,8 +23,8 @@ def _write_plugin(base_dir: Path, name: str, setup_code: str) -> Path:
 
 
 _TOOL_PLUGIN = '''
-from nanobot.plugins.types import PluginContext
-from nanobot.agent.tools.base import Tool
+from velo.plugins.types import PluginContext
+from velo.agent.tools.base import Tool
 from typing import Any
 
 class PingTool(Tool):
@@ -49,7 +49,7 @@ def setup(ctx: PluginContext) -> None:
 '''
 
 _PROMPT_HOOK_PLUGIN = '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     def add_footer(value: str) -> str:
@@ -114,7 +114,7 @@ class TestPluginContextIntegration:
         """ContextBuilder without a plugin manager should work as before."""
         builder = ContextBuilder(workspace=tmp_path)
         prompt = await builder.build_system_prompt()
-        assert "nanobot" in prompt
+        assert "velo" in prompt
         assert "# Plugin Context" not in prompt
 
     @pytest.mark.asyncio
@@ -134,7 +134,7 @@ class TestPluginContextIntegration:
         # Note: In practice, workspace plugins override by loading after builtins.
         # This test verifies discovery order by checking workspace plugin is loaded.
         _write_plugin(tmp_path, "override_me", '''
-from nanobot.plugins.types import PluginContext
+from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     ctx.add_context_provider(lambda: "workspace version")

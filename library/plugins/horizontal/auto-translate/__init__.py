@@ -15,8 +15,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from nanobot.agent.tools.base import Tool
-from nanobot.plugins.types import PluginContext
+from velo.agent.tools.base import Tool
+from velo.plugins.types import PluginContext
 
 logger = logging.getLogger(__name__)
 

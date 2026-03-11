@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from nanobot.agent.tools.base import Tool
-from nanobot.agent.tools.registry import ToolRegistry
-from nanobot.agent.tools.search import SearchToolsTool
+from velo.agent.tools.base import Tool
+from velo.agent.tools.registry import ToolRegistry
+from velo.agent.tools.search import SearchToolsTool
 
 # ---------------------------------------------------------------------------
 # Helpers

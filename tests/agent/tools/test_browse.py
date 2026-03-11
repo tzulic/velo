@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.agent.tools.browse import BrowserSession, WebBrowseTool, _html_to_markdown, _strip_tags
+from velo.agent.tools.browse import BrowserSession, WebBrowseTool, _html_to_markdown, _strip_tags
 
 
 def _mock_patchright_module(mock_pw_cm: MagicMock):
