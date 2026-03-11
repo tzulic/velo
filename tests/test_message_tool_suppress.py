@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.agent.loop import AgentLoop
-from nanobot.agent.tools.message import MessageTool
-from nanobot.bus.events import InboundMessage, OutboundMessage
-from nanobot.bus.queue import MessageBus
-from nanobot.providers.base import LLMResponse, StreamChunk, ToolCallRequest
+from velo.agent.loop import AgentLoop
+from velo.agent.tools.message import MessageTool
+from velo.bus.events import InboundMessage, OutboundMessage
+from velo.bus.queue import MessageBus
+from velo.providers.base import LLMResponse, StreamChunk, ToolCallRequest
 
 
 def _response_to_stream(response: LLMResponse):

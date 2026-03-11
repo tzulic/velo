@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from nanobot.providers.base import LLMResponse, StreamChunk
+from velo.providers.base import LLMResponse, StreamChunk
 
 
 async def _fake_stream(*chunks: StreamChunk):
@@ -45,7 +45,7 @@ class TestChatStreamToResponse:
     @pytest.mark.asyncio
     async def test_tool_calls_accumulated(self, make_loop) -> None:
         """Tool calls from the final chunk are included in the response."""
-        from nanobot.providers.base import ToolCallRequest
+        from velo.providers.base import ToolCallRequest
 
         loop = make_loop()
         emitted: list[str] = []

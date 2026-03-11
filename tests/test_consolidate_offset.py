@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nanobot.session.manager import Session, SessionManager
+from velo.session.manager import Session, SessionManager
 
 # Test constants
 MEMORY_WINDOW = 50
@@ -487,10 +487,10 @@ class TestConsolidationDeduplicationGuard:
     @pytest.mark.asyncio
     async def test_consolidation_guard_prevents_duplicate_tasks(self, tmp_path: Path) -> None:
         """Concurrent messages above memory_window spawn only one consolidation task."""
-        from nanobot.agent.loop import AgentLoop
-        from nanobot.bus.events import InboundMessage
-        from nanobot.bus.queue import MessageBus
-        from nanobot.providers.base import LLMResponse
+        from velo.agent.loop import AgentLoop
+        from velo.bus.events import InboundMessage
+        from velo.bus.queue import MessageBus
+        from velo.providers.base import LLMResponse
 
         bus = MessageBus()
         provider = MagicMock()
@@ -531,10 +531,10 @@ class TestConsolidationDeduplicationGuard:
         self, tmp_path: Path
     ) -> None:
         """/new command does not run consolidation concurrently with in-flight consolidation."""
-        from nanobot.agent.loop import AgentLoop
-        from nanobot.bus.events import InboundMessage
-        from nanobot.bus.queue import MessageBus
-        from nanobot.providers.base import LLMResponse
+        from velo.agent.loop import AgentLoop
+        from velo.bus.events import InboundMessage
+        from velo.bus.queue import MessageBus
+        from velo.providers.base import LLMResponse
 
         bus = MessageBus()
         provider = MagicMock()
@@ -583,10 +583,10 @@ class TestConsolidationDeduplicationGuard:
     @pytest.mark.asyncio
     async def test_consolidation_tasks_are_referenced(self, tmp_path: Path) -> None:
         """create_task results are tracked in _consolidation_tasks while in flight."""
-        from nanobot.agent.loop import AgentLoop
-        from nanobot.bus.events import InboundMessage
-        from nanobot.bus.queue import MessageBus
-        from nanobot.providers.base import LLMResponse
+        from velo.agent.loop import AgentLoop
+        from velo.bus.events import InboundMessage
+        from velo.bus.queue import MessageBus
+        from velo.providers.base import LLMResponse
 
         bus = MessageBus()
         provider = MagicMock()
@@ -628,10 +628,10 @@ class TestConsolidationDeduplicationGuard:
         self, tmp_path: Path
     ) -> None:
         """/new waits for in-flight consolidation and archives before clear."""
-        from nanobot.agent.loop import AgentLoop
-        from nanobot.bus.events import InboundMessage
-        from nanobot.bus.queue import MessageBus
-        from nanobot.providers.base import LLMResponse
+        from velo.agent.loop import AgentLoop
+        from velo.bus.events import InboundMessage
+        from velo.bus.queue import MessageBus
+        from velo.providers.base import LLMResponse
 
         bus = MessageBus()
         provider = MagicMock()
@@ -686,10 +686,10 @@ class TestConsolidationDeduplicationGuard:
     @pytest.mark.asyncio
     async def test_new_does_not_clear_session_when_archive_fails(self, tmp_path: Path) -> None:
         """/new must keep session data if archive step reports failure."""
-        from nanobot.agent.loop import AgentLoop
-        from nanobot.bus.events import InboundMessage
-        from nanobot.bus.queue import MessageBus
-        from nanobot.providers.base import LLMResponse
+        from velo.agent.loop import AgentLoop
+        from velo.bus.events import InboundMessage
+        from velo.bus.queue import MessageBus
+        from velo.providers.base import LLMResponse
 
         bus = MessageBus()
         provider = MagicMock()
@@ -730,10 +730,10 @@ class TestConsolidationDeduplicationGuard:
         self, tmp_path: Path
     ) -> None:
         """/new should archive only messages not yet consolidated by prior task."""
-        from nanobot.agent.loop import AgentLoop
-        from nanobot.bus.events import InboundMessage
-        from nanobot.bus.queue import MessageBus
-        from nanobot.providers.base import LLMResponse
+        from velo.agent.loop import AgentLoop
+        from velo.bus.events import InboundMessage
+        from velo.bus.queue import MessageBus
+        from velo.providers.base import LLMResponse
 
         bus = MessageBus()
         provider = MagicMock()
@@ -789,10 +789,10 @@ class TestConsolidationDeduplicationGuard:
     @pytest.mark.asyncio
     async def test_new_clears_session_and_responds(self, tmp_path: Path) -> None:
         """/new clears session and returns confirmation."""
-        from nanobot.agent.loop import AgentLoop
-        from nanobot.bus.events import InboundMessage
-        from nanobot.bus.queue import MessageBus
-        from nanobot.providers.base import LLMResponse
+        from velo.agent.loop import AgentLoop
+        from velo.bus.events import InboundMessage
+        from velo.bus.queue import MessageBus
+        from velo.providers.base import LLMResponse
 
         bus = MessageBus()
         provider = MagicMock()

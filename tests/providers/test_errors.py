@@ -2,7 +2,7 @@
 
 import pytest
 
-from nanobot.providers.errors import RETRYABLE_ERRORS, classify_error
+from velo.providers.errors import RETRYABLE_ERRORS, classify_error
 
 
 class TestClassifyError:

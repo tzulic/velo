@@ -1,6 +1,6 @@
 # MCP Servers Reference
 
-This reference lists MCP servers that work well with nanobot agents, along with
+This reference lists MCP servers that work well with velo agents, along with
 installation notes and config snippets.
 
 ---

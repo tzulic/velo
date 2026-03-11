@@ -3,12 +3,12 @@ x-common-config: &common-config
     context: .
     dockerfile: Dockerfile
   volumes:
-    - ~/.nanobot:/root/.nanobot
-    - ./nanobot:/opt/nanobot-src:ro
+    - ~/.velo:/root/.velo
+    - ./velo:/opt/velo-src:ro
 
 services:
-  nanobot-gateway:
-    container_name: nanobot-gateway
+  velo-gateway:
+    container_name: velo-gateway
     <<: *common-config
     command: ["gateway"]
     restart: unless-stopped
@@ -23,7 +23,7 @@ services:
           cpus: '0.25'
           memory: 256M
   
-  nanobot-cli:
+  velo-cli:
     <<: *common-config
     profiles:
       - cli

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from nanobot.providers.base import LLMResponse
+from velo.providers.base import LLMResponse
 
 
 def _ok_response(content: str = "Hello") -> LLMResponse:
@@ -50,10 +50,10 @@ class TestChatWithRetry:
         assert result.error_code == "auth_error"
         assert loop.provider.chat.call_count == 1
 
-    @patch("nanobot.agent.llm_helpers.asyncio.sleep", new_callable=AsyncMock)
+    @patch("velo.agent.llm_helpers.asyncio.sleep", new_callable=AsyncMock)
     async def test_retryable_error_retries_max_times(self, mock_sleep: AsyncMock, make_loop) -> None:
         """Retryable errors cause up to MAX_RETRIES attempts."""
-        from nanobot.agent.llm_helpers import MAX_RETRIES
+        from velo.agent.llm_helpers import MAX_RETRIES
 
         loop = make_loop()
         loop.provider.chat = AsyncMock(
@@ -68,7 +68,7 @@ class TestChatWithRetry:
         # Sleep called between retries (MAX_RETRIES - 1 times).
         assert mock_sleep.call_count == MAX_RETRIES - 1
 
-    @patch("nanobot.agent.llm_helpers.asyncio.sleep", new_callable=AsyncMock)
+    @patch("velo.agent.llm_helpers.asyncio.sleep", new_callable=AsyncMock)
     async def test_success_on_second_attempt(self, mock_sleep: AsyncMock, make_loop) -> None:
         """Recovery on second attempt stops retrying."""
         loop = make_loop()
@@ -86,7 +86,7 @@ class TestChatWithRetry:
         assert loop.provider.chat.call_count == 2
         assert mock_sleep.call_count == 1
 
-    @patch("nanobot.agent.llm_helpers.asyncio.sleep", new_callable=AsyncMock)
+    @patch("velo.agent.llm_helpers.asyncio.sleep", new_callable=AsyncMock)
     async def test_backoff_delay_increases(self, mock_sleep: AsyncMock, make_loop) -> None:
         """Delay increases exponentially between retries."""
         loop = make_loop()

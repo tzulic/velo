@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from nanobot.agent.llm_helpers import trim_to_budget
-from nanobot.providers.base import LLMResponse
+from velo.agent.llm_helpers import trim_to_budget
+from velo.providers.base import LLMResponse
 
 
 def _make_messages(count: int, chars_per_msg: int = 100) -> list[dict[str, Any]]:
@@ -98,7 +98,7 @@ class TestProactiveTrim:
             return_value=LLMResponse(content="Done", finish_reason="stop"),
         )
 
-        with patch("nanobot.agent.loop.trim_to_budget", wraps=trim_to_budget) as mock_trim:
+        with patch("velo.agent.loop.trim_to_budget", wraps=trim_to_budget) as mock_trim:
             await loop._run_agent_loop(big_messages)
             mock_trim.assert_called()
 

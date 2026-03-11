@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from nanobot.cli.commands import app
-from nanobot.config.schema import Config
-from nanobot.providers.litellm_provider import LiteLLMProvider
-from nanobot.providers.openai_codex_provider import _strip_model_prefix
-from nanobot.providers.registry import find_by_model
+from velo.cli.commands import app
+from velo.config.schema import Config
+from velo.providers.litellm_provider import LiteLLMProvider
+from velo.providers.openai_codex_provider import _strip_model_prefix
+from velo.providers.registry import find_by_model
 
 runner = CliRunner()
 
@@ -21,10 +21,10 @@ class _StopGateway(RuntimeError):
 @pytest.fixture
 def mock_paths():
     """Mock config/workspace paths for test isolation."""
-    with patch("nanobot.config.loader.get_config_path") as mock_cp, \
-         patch("nanobot.config.loader.save_config") as mock_sc, \
-         patch("nanobot.config.loader.load_config") as mock_lc, \
-         patch("nanobot.cli.commands.get_workspace_path") as mock_ws:
+    with patch("velo.config.loader.get_config_path") as mock_cp, \
+         patch("velo.config.loader.save_config") as mock_sc, \
+         patch("velo.config.loader.load_config") as mock_lc, \
+         patch("velo.cli.commands.get_workspace_path") as mock_ws:
 
         base_dir = Path("./test_onboard_data")
         if base_dir.exists():
@@ -53,7 +53,7 @@ def test_onboard_fresh_install(mock_paths):
     assert result.exit_code == 0
     assert "Created config" in result.stdout
     assert "Created workspace" in result.stdout
-    assert "nanobot is ready" in result.stdout
+    assert "Velo is ready" in result.stdout
     assert config_file.exists()
     assert (workspace_dir / "AGENTS.md").exists()
     assert (workspace_dir / "memory" / "MEMORY.md").exists()
@@ -141,14 +141,14 @@ def mock_agent_runtime(tmp_path):
     config.agents.defaults.workspace = str(tmp_path / "default-workspace")
     cron_dir = tmp_path / "data" / "cron"
 
-    with patch("nanobot.config.loader.load_config", return_value=config) as mock_load_config, \
-         patch("nanobot.config.paths.get_cron_dir", return_value=cron_dir), \
-         patch("nanobot.cli.commands.sync_workspace_templates") as mock_sync_templates, \
-         patch("nanobot.cli.commands._make_provider", return_value=object()), \
-         patch("nanobot.cli.commands._print_agent_response") as mock_print_response, \
-         patch("nanobot.bus.queue.MessageBus"), \
-         patch("nanobot.cron.service.CronService"), \
-         patch("nanobot.agent.loop.AgentLoop") as mock_agent_loop_cls:
+    with patch("velo.config.loader.load_config", return_value=config) as mock_load_config, \
+         patch("velo.config.paths.get_cron_dir", return_value=cron_dir), \
+         patch("velo.cli.commands.sync_workspace_templates") as mock_sync_templates, \
+         patch("velo.cli.commands._make_provider", return_value=object()), \
+         patch("velo.cli.commands._print_agent_response") as mock_print_response, \
+         patch("velo.bus.queue.MessageBus"), \
+         patch("velo.cron.service.CronService"), \
+         patch("velo.agent.loop.AgentLoop") as mock_agent_loop_cls:
 
         agent_loop = MagicMock()
         agent_loop.channels_config = None
@@ -211,18 +211,18 @@ def test_agent_config_sets_active_path(monkeypatch, tmp_path: Path) -> None:
     seen: dict[str, Path] = {}
 
     monkeypatch.setattr(
-        "nanobot.config.loader.set_config_path",
+        "velo.config.loader.set_config_path",
         lambda path: seen.__setitem__("config_path", path),
     )
-    monkeypatch.setattr("nanobot.config.loader.load_config", lambda _path=None: config)
-    monkeypatch.setattr("nanobot.config.paths.get_cron_dir", lambda: config_file.parent / "cron")
-    monkeypatch.setattr("nanobot.cli.commands.sync_workspace_templates", lambda _path: None)
+    monkeypatch.setattr("velo.config.loader.load_config", lambda _path=None: config)
+    monkeypatch.setattr("velo.config.paths.get_cron_dir", lambda: config_file.parent / "cron")
+    monkeypatch.setattr("velo.cli.commands.sync_workspace_templates", lambda _path: None)
     from unittest.mock import AsyncMock, MagicMock
     fake_bus = MagicMock()
     fake_bus.publish_outbound = AsyncMock()
-    monkeypatch.setattr("nanobot.cli.commands._make_provider", lambda _config: object())
-    monkeypatch.setattr("nanobot.bus.queue.MessageBus", lambda: fake_bus)
-    monkeypatch.setattr("nanobot.cron.service.CronService", lambda _store: object())
+    monkeypatch.setattr("velo.cli.commands._make_provider", lambda _config: object())
+    monkeypatch.setattr("velo.bus.queue.MessageBus", lambda: fake_bus)
+    monkeypatch.setattr("velo.cron.service.CronService", lambda _store: object())
 
     class _FakeAgentLoop:
         def __init__(self, *args, **kwargs) -> None:
@@ -240,8 +240,8 @@ def test_agent_config_sets_active_path(monkeypatch, tmp_path: Path) -> None:
         async def close_mcp(self) -> None:
             return None
 
-    monkeypatch.setattr("nanobot.agent.loop.AgentLoop", _FakeAgentLoop)
-    monkeypatch.setattr("nanobot.cli.commands._print_agent_response", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("velo.agent.loop.AgentLoop", _FakeAgentLoop)
+    monkeypatch.setattr("velo.cli.commands._print_agent_response", lambda *_args, **_kwargs: None)
 
     result = runner.invoke(app, ["agent", "-m", "hello", "-c", str(config_file)])
 
@@ -287,16 +287,16 @@ def test_gateway_uses_workspace_from_config_by_default(monkeypatch, tmp_path: Pa
     seen: dict[str, Path] = {}
 
     monkeypatch.setattr(
-        "nanobot.config.loader.set_config_path",
+        "velo.config.loader.set_config_path",
         lambda path: seen.__setitem__("config_path", path),
     )
-    monkeypatch.setattr("nanobot.config.loader.load_config", lambda _path=None: config)
+    monkeypatch.setattr("velo.config.loader.load_config", lambda _path=None: config)
     monkeypatch.setattr(
-        "nanobot.cli.commands.sync_workspace_templates",
+        "velo.cli.commands.sync_workspace_templates",
         lambda path: seen.__setitem__("workspace", path),
     )
     monkeypatch.setattr(
-        "nanobot.cli.commands._make_provider",
+        "velo.cli.commands._make_provider",
         lambda _config: (_ for _ in ()).throw(_StopGateway("stop")),
     )
 
@@ -317,14 +317,14 @@ def test_gateway_workspace_option_overrides_config(monkeypatch, tmp_path: Path) 
     override = tmp_path / "override-workspace"
     seen: dict[str, Path] = {}
 
-    monkeypatch.setattr("nanobot.config.loader.set_config_path", lambda _path: None)
-    monkeypatch.setattr("nanobot.config.loader.load_config", lambda _path=None: config)
+    monkeypatch.setattr("velo.config.loader.set_config_path", lambda _path: None)
+    monkeypatch.setattr("velo.config.loader.load_config", lambda _path=None: config)
     monkeypatch.setattr(
-        "nanobot.cli.commands.sync_workspace_templates",
+        "velo.cli.commands.sync_workspace_templates",
         lambda path: seen.__setitem__("workspace", path),
     )
     monkeypatch.setattr(
-        "nanobot.cli.commands._make_provider",
+        "velo.cli.commands._make_provider",
         lambda _config: (_ for _ in ()).throw(_StopGateway("stop")),
     )
 
@@ -347,20 +347,20 @@ def test_gateway_uses_config_directory_for_cron_store(monkeypatch, tmp_path: Pat
     config.agents.defaults.workspace = str(tmp_path / "config-workspace")
     seen: dict[str, Path] = {}
 
-    monkeypatch.setattr("nanobot.config.loader.set_config_path", lambda _path: None)
-    monkeypatch.setattr("nanobot.config.loader.load_config", lambda _path=None: config)
-    monkeypatch.setattr("nanobot.config.paths.get_cron_dir", lambda: config_file.parent / "cron")
-    monkeypatch.setattr("nanobot.cli.commands.sync_workspace_templates", lambda _path: None)
-    monkeypatch.setattr("nanobot.cli.commands._make_provider", lambda _config: object())
-    monkeypatch.setattr("nanobot.bus.queue.MessageBus", lambda: object())
-    monkeypatch.setattr("nanobot.session.manager.SessionManager", lambda _workspace: object())
+    monkeypatch.setattr("velo.config.loader.set_config_path", lambda _path: None)
+    monkeypatch.setattr("velo.config.loader.load_config", lambda _path=None: config)
+    monkeypatch.setattr("velo.config.paths.get_cron_dir", lambda: config_file.parent / "cron")
+    monkeypatch.setattr("velo.cli.commands.sync_workspace_templates", lambda _path: None)
+    monkeypatch.setattr("velo.cli.commands._make_provider", lambda _config: object())
+    monkeypatch.setattr("velo.bus.queue.MessageBus", lambda: object())
+    monkeypatch.setattr("velo.session.manager.SessionManager", lambda _workspace: object())
 
     class _StopCron:
         def __init__(self, store_path: Path) -> None:
             seen["cron_store"] = store_path
             raise _StopGateway("stop")
 
-    monkeypatch.setattr("nanobot.cron.service.CronService", _StopCron)
+    monkeypatch.setattr("velo.cron.service.CronService", _StopCron)
 
     result = runner.invoke(app, ["gateway", "--config", str(config_file)])
 

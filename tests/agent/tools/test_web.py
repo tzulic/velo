@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
+from velo.agent.tools.web import WebFetchTool, WebSearchTool
 
 # ---------------------------------------------------------------------------
 # WebSearchTool
@@ -37,7 +37,7 @@ class TestWebSearchTool:
         mock_client = AsyncMock()
         mock_client.beta.search = AsyncMock(return_value=mock_search)
 
-        with patch("nanobot.agent.tools.web.AsyncParallel", return_value=mock_client):
+        with patch("velo.agent.tools.web.AsyncParallel", return_value=mock_client):
             tool = WebSearchTool(api_key="test-key")
             result = await tool.execute(query="test query")
 
@@ -54,7 +54,7 @@ class TestWebSearchTool:
         mock_client = AsyncMock()
         mock_client.beta.search = AsyncMock(return_value=mock_search)
 
-        with patch("nanobot.agent.tools.web.AsyncParallel", return_value=mock_client):
+        with patch("velo.agent.tools.web.AsyncParallel", return_value=mock_client):
             tool = WebSearchTool(api_key="test-key")
             result = await tool.execute(query="obscure query")
 
@@ -66,7 +66,7 @@ class TestWebSearchTool:
         mock_client = AsyncMock()
         mock_client.beta.search = AsyncMock(side_effect=ConnectionError("timeout"))
 
-        with patch("nanobot.agent.tools.web.AsyncParallel", return_value=mock_client):
+        with patch("velo.agent.tools.web.AsyncParallel", return_value=mock_client):
             tool = WebSearchTool(api_key="test-key")
             result = await tool.execute(query="test")
 
@@ -114,7 +114,7 @@ class TestWebFetchTool:
         mock_client = AsyncMock()
         mock_client.beta.extract = AsyncMock(return_value=mock_extract)
 
-        with patch("nanobot.agent.tools.web.AsyncParallel", return_value=mock_client):
+        with patch("velo.agent.tools.web.AsyncParallel", return_value=mock_client):
             tool = WebFetchTool(api_key="test-key")
             result = await tool.execute(url="https://example.com")
 
@@ -140,7 +140,7 @@ class TestWebFetchTool:
         mock_client = AsyncMock()
         mock_client.beta.extract = AsyncMock(return_value=mock_extract)
 
-        with patch("nanobot.agent.tools.web.AsyncParallel", return_value=mock_client):
+        with patch("velo.agent.tools.web.AsyncParallel", return_value=mock_client):
             tool = WebFetchTool(api_key="test-key", max_chars=100)
             result = await tool.execute(url="https://example.com")
 
@@ -154,7 +154,7 @@ class TestWebFetchTool:
         mock_client = AsyncMock()
         mock_client.beta.extract = AsyncMock(side_effect=ConnectionError("refused"))
 
-        with patch("nanobot.agent.tools.web.AsyncParallel", return_value=mock_client):
+        with patch("velo.agent.tools.web.AsyncParallel", return_value=mock_client):
             tool = WebFetchTool(api_key="test-key")
             result = await tool.execute(url="https://example.com")
 

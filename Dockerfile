@@ -16,12 +16,12 @@ WORKDIR /app
 
 # Install Python dependencies first (cached layer)
 COPY pyproject.toml README.md LICENSE ./
-RUN mkdir -p nanobot bridge && touch nanobot/__init__.py && \
+RUN mkdir -p velo bridge && touch velo/__init__.py && \
     uv pip install --system --no-cache . && \
-    rm -rf nanobot bridge
+    rm -rf velo bridge
 
 # Copy the full source and install
-COPY nanobot/ nanobot/
+COPY velo/ velo/
 COPY bridge/ bridge/
 RUN uv pip install --system --no-cache .
 
@@ -30,14 +30,14 @@ WORKDIR /app/bridge
 RUN npm install && npm run build
 WORKDIR /app
 
-# Nanobot source for Volos agent exploration
-COPY . /opt/nanobot-src
+# Velo source for Volos agent exploration
+COPY . /opt/velo-src
 
 # Create config directory
-RUN mkdir -p /root/.nanobot
+RUN mkdir -p /root/.velo
 
 # Gateway default port
 EXPOSE 18790
 
-ENTRYPOINT ["nanobot"]
+ENTRYPOINT ["velo"]
 CMD ["status"]

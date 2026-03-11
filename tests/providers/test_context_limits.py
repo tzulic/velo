@@ -2,7 +2,7 @@
 
 import pytest
 
-from nanobot.providers.context_limits import (
+from velo.providers.context_limits import (
     _DEFAULT_CONTEXT_WINDOW,
     estimate_tokens,
     get_context_window,
