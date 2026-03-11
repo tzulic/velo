@@ -1,76 +1,42 @@
 <div align="center">
-  <img src="velo_logo.png" alt="velo" width="500">
-  <h1>velo: Ultra-Lightweight Personal AI Assistant</h1>
+  <img src="velo_logo.png" alt="Volos Velo" width="500">
+  <h1>Volos Velo: AI-Powered Personal Assistant</h1>
   <p>
     <a href="https://pypi.org/project/velo-ai/"><img src="https://img.shields.io/pypi/v/velo-ai" alt="PyPI"></a>
     <a href="https://pepy.tech/project/velo-ai"><img src="https://static.pepy.tech/badge/velo-ai" alt="Downloads"></a>
     <img src="https://img.shields.io/badge/python-≥3.11-blue" alt="Python">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
-    <a href="./COMMUNICATION.md"><img src="https://img.shields.io/badge/Feishu-Group-E9DBFC?style=flat&logo=feishu&logoColor=white" alt="Feishu"></a>
-    <a href="./COMMUNICATION.md"><img src="https://img.shields.io/badge/WeChat-Group-C5EAB4?style=flat&logo=wechat&logoColor=white" alt="WeChat"></a>
-    <a href="https://discord.gg/MnCvHqpUGB"><img src="https://img.shields.io/badge/Discord-Community-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
+    <a href="https://volos.io"><img src="https://img.shields.io/badge/Managed%20by-Volos-0066FF?style=flat&logo=cloud&logoColor=white" alt="Volos"></a>
   </p>
 </div>
 
-💨 **velo** is an **ultra-lightweight** personal AI assistant inspired by [OpenClaw](https://github.com/openclaw/openclaw).
+🚀 **Volos Velo** is an **ultra-lightweight**, open-source personal AI assistant deployed and managed by Volos.
 
-⚡️ Delivers core agent functionality with **99% fewer lines of code** than OpenClaw.
+⚡️ Runs as a daemon on your Hetzner VPS with minimal footprint. Focus on your life—we handle the infrastructure and AI orchestration.
 
-📏 Real-time line count: run `bash core_agent_lines.sh` to verify anytime.
+💎 **Volos handles deployment, updates, and configuration.** You just chat. [Start your free trial](https://volos.io).
 
-## 📢 News
+## 📢 Latest Updates
 
-- **2026-03-08** 🚀 Released **v0.1.4.post4** — a reliability-packed release with safer defaults, better multi-instance support, sturdier MCP, and major channel and provider improvements. Please see [release notes](https://github.com/HKUDS/velo/releases/tag/v0.1.4.post4) for details.
-- **2026-03-07** 🚀 Azure OpenAI provider, WhatsApp media, QQ group chats, and more Telegram/Feishu polish.
-- **2026-03-06** 🪄 Lighter providers, smarter media handling, and sturdier memory and CLI compatibility.
-- **2026-03-05** ⚡️ Telegram draft streaming, MCP SSE support, and broader channel reliability fixes.
-- **2026-03-04** 🛠️ Dependency cleanup, safer file reads, and another round of test and Cron fixes.
-- **2026-03-03** 🧠 Cleaner user-message merging, safer multimodal saves, and stronger Cron guards.
-- **2026-03-02** 🛡️ Safer default access control, sturdier Cron reloads, and cleaner Matrix media handling.
-- **2026-03-01** 🌐 Web proxy support, smarter Cron reminders, and Feishu rich-text parsing improvements.
-- **2026-02-28** 🚀 Released **v0.1.4.post3** — cleaner context, hardened session history, and smarter agent. Please see [release notes](https://github.com/HKUDS/velo/releases/tag/v0.1.4.post3) for details.
-- **2026-02-27** 🧠 Experimental thinking mode support, DingTalk media messages, Feishu and QQ channel fixes.
-- **2026-02-26** 🛡️ Session poisoning fix, WhatsApp dedup, Windows path guard, Mistral compatibility.
+- **Volos Managed Service** — Your Velo instance runs on your own Hetzner VPS. Volos handles deployment, updates, and AI orchestration via Claude Agent SDK.
+- **Multi-Channel Support** — Telegram, Discord, WhatsApp, Slack, Feishu, DingTalk, QQ, Email, Matrix, and more.
+- **MCP Integration** — Connect external tool servers (filesystem, GitHub, databases, APIs) as native agent tools.
+- **Provider Support** — OpenRouter, Anthropic, Azure OpenAI, OpenAI, DeepSeek, Groq, Gemini, Mistral, and 15+ more LLM providers.
+- **Volos Console** — Manage your agent from a web dashboard. No CLI required.
+- **Skill Marketplace** — Browse and install skills (GitHub integration, weather, email, scheduling, memory, and more).
 
-<details>
-<summary>Earlier news</summary>
 
-- **2026-02-25** 🧹 New Matrix channel, cleaner session context, auto workspace template sync.
-- **2026-02-24** 🚀 Released **v0.1.4.post2** — a reliability-focused release with a redesigned heartbeat, prompt cache optimization, and hardened provider & channel stability. See [release notes](https://github.com/HKUDS/velo/releases/tag/v0.1.4.post2) for details.
-- **2026-02-23** 🔧 Virtual tool-call heartbeat, prompt cache optimization, Slack mrkdwn fixes.
-- **2026-02-22** 🛡️ Slack thread isolation, Discord typing fix, agent reliability improvements.
-- **2026-02-21** 🎉 Released **v0.1.4.post1** — new providers, media support across channels, and major stability improvements. See [release notes](https://github.com/HKUDS/velo/releases/tag/v0.1.4.post1) for details.
-- **2026-02-20** 🐦 Feishu now receives multimodal files from users. More reliable memory under the hood.
-- **2026-02-19** ✨ Slack now sends files, Discord splits long messages, and subagents work in CLI mode.
-- **2026-02-18** ⚡️ velo now supports VolcEngine, MCP custom auth headers, and Anthropic prompt caching.
-- **2026-02-17** 🎉 Released **v0.1.4** — MCP support, progress streaming, new providers, and multiple channel improvements. Please see [release notes](https://github.com/HKUDS/velo/releases/tag/v0.1.4) for details.
-- **2026-02-16** 🦞 velo now integrates a [ClawHub](https://clawhub.ai) skill — search and install public agent skills.
-- **2026-02-15** 🔑 velo now supports OpenAI Codex provider with OAuth login support.
-- **2026-02-14** 🔌 velo now supports MCP! See [MCP section](#mcp-model-context-protocol) for details.
-- **2026-02-13** 🎉 Released **v0.1.3.post7** — includes security hardening and multiple improvements. **Please upgrade to the latest version to address security issues**. See [release notes](https://github.com/HKUDS/velo/releases/tag/v0.1.3.post7) for more details.
-- **2026-02-12** 🧠 Redesigned memory system — Less code, more reliable. Join the [discussion](https://github.com/HKUDS/velo/discussions/566) about it!
-- **2026-02-11** ✨ Enhanced CLI experience and added MiniMax support!
-- **2026-02-10** 🎉 Released **v0.1.3.post6** with improvements! Check the updates [notes](https://github.com/HKUDS/velo/releases/tag/v0.1.3.post6) and our [roadmap](https://github.com/HKUDS/velo/discussions/431).
-- **2026-02-09** 💬 Added Slack, Email, and QQ support — velo now supports multiple chat platforms!
-- **2026-02-08** 🔧 Refactored Providers—adding a new LLM provider now takes just 2 simple steps! Check [here](#providers).
-- **2026-02-07** 🚀 Released **v0.1.3.post5** with Qwen support & several key improvements! Check [here](https://github.com/HKUDS/velo/releases/tag/v0.1.3.post5) for details.
-- **2026-02-06** ✨ Added Moonshot/Kimi provider, Discord integration, and enhanced security hardening!
-- **2026-02-05** ✨ Added Feishu channel, DeepSeek provider, and enhanced scheduled tasks support!
-- **2026-02-04** 🚀 Released **v0.1.3.post4** with multi-provider & Docker support! Check [here](https://github.com/HKUDS/velo/releases/tag/v0.1.3.post4) for details.
-- **2026-02-03** ⚡ Integrated vLLM for local LLM support and improved natural language task scheduling!
-- **2026-02-02** 🎉 velo officially launched! Welcome to try 🐈 velo!
+## Why Volos Velo?
 
-</details>
+🪶 **Ultra-Lightweight**: ~4,000 lines of core agent code. Runs on €10/mo Hetzner VPS with minimal overhead.
 
-## Key Features of velo:
+🚀 **Managed for You**: Volos deploys, updates, and maintains your Velo instance. No DevOps required.
 
-🪶 **Ultra-Lightweight**: Just ~4,000 lines of core agent code — 99% smaller than Clawdbot.
+🧠 **AI-Orchestrated**: Claude Agent SDK handles skill installation, configuration, and complex workflows—not just chat.
 
-🔬 **Research-Ready**: Clean, readable code that's easy to understand, modify, and extend for research.
+💬 **Multi-Channel**: One agent, multiple interfaces—Telegram, Discord, WhatsApp, email, Slack, and more.
 
-⚡️ **Lightning Fast**: Minimal footprint means faster startup, lower resource usage, and quicker iterations.
-
-💎 **Easy-to-Use**: One-click to deploy and you're ready to go.
+🛠️ **Extensible**: Add custom skills via SKILL.md spec. Connect external APIs via MCP.
 
 ## 🏗️ Architecture
 
@@ -101,26 +67,38 @@
   </tr>
 </table>
 
-## 📦 Install
+## 🚀 Get Started
 
-**Install from source** (latest features, recommended for development)
+### Option 1: Let Volos Manage It (Recommended)
 
-```bash
-git clone https://github.com/HKUDS/velo.git
-cd velo
-pip install -e .
-```
+Sign up at [volos.io](https://volos.io) — Volos handles everything.
 
-**Install with [uv](https://github.com/astral-sh/uv)** (stable, fast)
+- €99 setup + €49/mo
+- Your own Hetzner CX23 VPS
+- Volos deploys and maintains Velo
+- AI-powered agent setup via Claude Agent SDK
+- 30-day money-back guarantee
+
+### Option 2: Self-Hosted (Advanced)
+
+**Install with [uv](https://github.com/astral-sh/uv)** (recommended)
 
 ```bash
 uv tool install velo-ai
 ```
 
-**Install from PyPI** (stable)
+**Or install from PyPI**
 
 ```bash
 pip install velo-ai
+```
+
+**Or from source** (latest features, development)
+
+```bash
+git clone https://github.com/volosai/velo.git
+cd velo
+pip install -e .
 ```
 
 ### Update to latest version
@@ -243,62 +221,6 @@ velo gateway
 
 </details>
 
-<details>
-<summary><b>Mochat (Claw IM)</b></summary>
-
-Uses **Socket.IO WebSocket** by default, with HTTP polling fallback.
-
-**1. Ask velo to set up Mochat for you**
-
-Simply send this message to velo (replace `xxx@xxx` with your real email):
-
-```
-Read https://raw.githubusercontent.com/HKUDS/MoChat/refs/heads/main/skills/velo/skill.md and register on MoChat. My Email account is xxx@xxx Bind me as your owner and DM me on MoChat.
-```
-
-velo will automatically register, configure `~/.velo/config.json`, and connect to Mochat.
-
-**2. Restart gateway**
-
-```bash
-velo gateway
-```
-
-That's it — velo handles the rest!
-
-<br>
-
-<details>
-<summary>Manual configuration (advanced)</summary>
-
-If you prefer to configure manually, add the following to `~/.velo/config.json`:
-
-> Keep `claw_token` private. It should only be sent in `X-Claw-Token` header to your Mochat API endpoint.
-
-```json
-{
-  "channels": {
-    "mochat": {
-      "enabled": true,
-      "base_url": "https://mochat.io",
-      "socket_url": "https://mochat.io",
-      "socket_path": "/socket.io",
-      "claw_token": "claw_xxx",
-      "agent_user_id": "6982abcdef",
-      "sessions": ["*"],
-      "panels": ["*"],
-      "reply_delay_mode": "non-mention",
-      "reply_delay_ms": 120000
-    }
-  }
-}
-```
-
-
-
-</details>
-
-</details>
 
 <details>
 <summary><b>Discord</b></summary>
@@ -677,16 +599,19 @@ velo gateway
 
 </details>
 
-## 🌐 Agent Social Network
+## 🌐 Skill Marketplace
 
-🐈 velo is capable of linking to the agent social network (agent community). **Just send one message and your velo joins automatically!**
+Extend Velo with skills from the community. Your agent can discover, install, and use skills automatically.
 
-| Platform | How to Join (send this message to your bot) |
-|----------|-------------|
-| [**Moltbook**](https://www.moltbook.com/) | `Read https://moltbook.com/skill.md and follow the instructions to join Moltbook` |
-| [**ClawdChat**](https://clawdchat.ai/) | `Read https://clawdchat.ai/skill.md and follow the instructions to join ClawdChat` |
+Common skills include:
+- **GitHub** — Query repos, create issues, manage projects
+- **Weather** — Real-time forecasts and alerts
+- **Calendar** — Schedule meetings and reminders
+- **Email** — Send and parse messages
+- **Web Search** — Powered by Parallel.ai
+- **Custom** — Write your own via SKILL.md spec
 
-Simply send the command above to your velo (via CLI or any chat channel), and it will handle the rest.
+Ask your Velo agent to "install a skill" and it will guide you through the process.
 
 ## ⚙️ Configuration
 
@@ -1127,7 +1052,7 @@ which velo   # e.g. /home/user/.local/bin/velo
 
 ```ini
 [Unit]
-Description=Nanobot Gateway
+Description=Volos Velo Gateway
 After=network.target
 
 [Service]
@@ -1188,43 +1113,26 @@ velo/
 └── cli/            # 🖥️ Commands
 ```
 
-## 🤝 Contribute & Roadmap
+## 🤝 Built by Volos
 
-PRs welcome! The codebase is intentionally small and readable. 🤗
+Volos is building the future of AI-powered personal assistants. Velo is at the heart of it.
 
-**Roadmap** — Pick an item and [open a PR](https://github.com/HKUDS/velo/pulls)!
+**Get Support:**
+- [Volos Discord](https://discord.gg/volos) — Community & support
+- [GitHub Issues](https://github.com/volosai/velo/issues) — Bug reports & feature requests
+- [Volos Docs](https://docs.volos.io) — Full documentation
 
-- [ ] **Multi-modal** — See and hear (images, voice, video)
-- [ ] **Long-term memory** — Never forget important context
-- [ ] **Better reasoning** — Multi-step planning and reflection
-- [ ] **More integrations** — Calendar and more
-- [ ] **Self-improvement** — Learn from feedback and mistakes
-
-### Contributors
-
-<a href="https://github.com/HKUDS/velo/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=HKUDS/velo&max=100&columns=12&updated=20260210" alt="Contributors" />
-</a>
-
-
-## ⭐ Star History
-
-<div align="center">
-  <a href="https://star-history.com/#HKUDS/velo&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=HKUDS/velo&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=HKUDS/velo&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=HKUDS/velo&type=Date" style="border-radius: 15px; box-shadow: 0 0 30px rgba(0, 217, 255, 0.3);" />
-    </picture>
-  </a>
-</div>
+**Contribute:**
+- PRs welcome on [GitHub](https://github.com/volosai/velo)!
+- The codebase is intentionally small and readable. 🤗
 
 <p align="center">
-  <em> Thanks for visiting ✨ velo!</em><br><br>
-  <img src="https://visitor-badge.laobi.icu/badge?page_id=HKUDS.velo&style=for-the-badge&color=00d4ff" alt="Views">
+  <em>Powered by Volos ✨</em><br>
+  <strong>Your AI assistant. Your VPS. Our expertise.</strong>
 </p>
 
+---
 
-<p align="center">
-  <sub>velo is for educational, research, and technical exchange purposes only</sub>
-</p>
+**Volos** is building the future of personal AI. [Start your journey](https://volos.io).
+
+Velo is an open-source project. Volos is the managed service that makes it effortless.
