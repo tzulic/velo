@@ -77,7 +77,8 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         env_key="",
         display_name="Custom",
         litellm_prefix="",
-        is_direct=True,
+        is_gateway=True,  # treat as gateway so find_gateway() picks it up
+        is_direct=True,   # signals: use openai-compatible format, no model prefixing
     ),
     # === Azure OpenAI (direct API calls with API version 2024-10-21) =====
     ProviderSpec(
