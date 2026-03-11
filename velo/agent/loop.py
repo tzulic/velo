@@ -20,7 +20,6 @@ from velo.agent.llm_helpers import (
     chat_with_retry,
     trim_to_budget,
 )
-from velo.agent.memory import MemoryStore
 from velo.agent.subagent import SubagentManager
 from velo.agent.tools.browse import BrowserSession, WebBrowseTool
 from velo.agent.tools.cron import CronTool
@@ -551,6 +550,7 @@ class AgentLoop:
             session.clear()
             self.sessions.save(session)
             self.sessions.invalidate(session.key)
+            self._turn_counts.pop(key, None)
             return OutboundMessage(
                 channel=msg.channel, chat_id=msg.chat_id, content="New session started."
             )
@@ -695,7 +695,7 @@ class AgentLoop:
 
     async def _consolidate_memory(self, session, archive_all: bool = False) -> bool:
         """Delegate to MemoryStore.consolidate(). Returns True on success."""
-        return await MemoryStore(self.workspace).consolidate(
+        return await self.context.memory.consolidate(
             session,
             self.provider,
             self.model,

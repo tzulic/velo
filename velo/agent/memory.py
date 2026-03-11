@@ -20,23 +20,21 @@ if TYPE_CHECKING:
 
 # Patterns that guard against prompt injection from external content (web pages,
 # files) being written into MEMORY.md or USER.md, which are loaded every turn.
-_MEMORY_THREAT_PATTERNS = [
+# Pre-compiled for efficiency — these run before every memory write.
+_MEMORY_THREAT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # Prompt injection
-    (r"ignore\s+(previous|all|above|prior)\s+instructions", "prompt_injection"),
-    (r"you\s+are\s+now\s+", "role_hijack"),
-    (r"do\s+not\s+tell\s+the\s+user", "deception_hide"),
-    (r"system\s+prompt\s+override", "sys_prompt_override"),
-    (r"disregard\s+(your|all|any)\s+(instructions|rules|guidelines)", "disregard_rules"),
-    (
-        r"act\s+as\s+(if|though)\s+you\s+(have\s+no|don't\s+have)\s+(restrictions|limits|rules)",
-        "bypass_restrictions",
-    ),
+    (re.compile(r"ignore\s+(previous|all|above|prior)\s+instructions", re.IGNORECASE), "prompt_injection"),
+    (re.compile(r"you\s+are\s+now\s+", re.IGNORECASE), "role_hijack"),
+    (re.compile(r"do\s+not\s+tell\s+the\s+user", re.IGNORECASE), "deception_hide"),
+    (re.compile(r"system\s+prompt\s+override", re.IGNORECASE), "sys_prompt_override"),
+    (re.compile(r"disregard\s+(your|all|any)\s+(instructions|rules|guidelines)", re.IGNORECASE), "disregard_rules"),
+    (re.compile(r"act\s+as\s+(if|though)\s+you\s+(have\s+no|don't\s+have)\s+(restrictions|limits|rules)", re.IGNORECASE), "bypass_restrictions"),
     # Exfiltration
-    (r"curl\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)", "exfil_curl"),
-    (r"wget\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)", "exfil_wget"),
-    (r"cat\s+[^\n]*(\.env|credentials|\.netrc|\.pgpass|\.npmrc|\.pypirc)", "read_secrets"),
+    (re.compile(r"curl\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)", re.IGNORECASE), "exfil_curl"),
+    (re.compile(r"wget\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)", re.IGNORECASE), "exfil_wget"),
+    (re.compile(r"cat\s+[^\n]*(\.env|credentials|\.netrc|\.pgpass|\.npmrc|\.pypirc)", re.IGNORECASE), "read_secrets"),
     # Backdoors
-    (r"authorized_keys", "ssh_backdoor"),
+    (re.compile(r"authorized_keys", re.IGNORECASE), "ssh_backdoor"),
 ]
 
 # Unicode invisible/directional chars used to hide injected instructions.
@@ -98,15 +96,36 @@ def _scan_memory_content(content: str) -> str | None:
     Returns:
         Error string describing the threat if detected, None if safe.
     """
-    for char in content:
-        if char in _INVISIBLE_CHARS:
-            return f"memory.write_rejected: invisible_char U+{ord(char):04X}"
+    found = next((c for c in content if c in _INVISIBLE_CHARS), None)
+    if found:
+        return f"memory.write_rejected: invisible_char U+{ord(found):04X}"
 
     for pattern, threat_type in _MEMORY_THREAT_PATTERNS:
-        if re.search(pattern, content, re.IGNORECASE):
+        if pattern.search(content):
             return f"memory.write_rejected: {threat_type}"
 
     return None
+
+
+def _format_usage_section(label: str, content: str, limit: int) -> str:
+    """Format a memory section string with a usage-indicator header.
+
+    Args:
+        label: Section title shown in the header (e.g. "MEMORY (agent notes)").
+        content: The section body text.
+        limit: Soft char limit used to compute the usage percentage.
+
+    Returns:
+        Formatted string with separator header and usage indicator.
+    """
+    current = len(content)
+    pct = int(current * 100 / limit) if limit > 0 else 0
+    header = (
+        "══════════════════════════════════════════════\n"
+        f"{label} [{pct}% — {current:,}/{limit:,} chars]\n"
+        "══════════════════════════════════════════════"
+    )
+    return f"{header}\n{content}"
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -152,6 +171,19 @@ class MemoryStore:
             return self.memory_file.read_text(encoding="utf-8")
         return ""
 
+    def _write_with_scan(self, path: Path, content: str) -> bool:
+        """Security-scan content then atomically write to path.
+
+        Returns:
+            True on success, False if blocked by security scan.
+        """
+        threat = _scan_memory_content(content)
+        if threat:
+            logger.warning("{}", threat)
+            return False
+        _atomic_write(path, content)
+        return True
+
     def write_long_term(self, content: str) -> bool:
         """Write content to MEMORY.md atomically after security scan.
 
@@ -161,12 +193,7 @@ class MemoryStore:
         Returns:
             True on success, False if blocked by security scan.
         """
-        threat = _scan_memory_content(content)
-        if threat:
-            logger.warning("{}", threat)
-            return False
-        _atomic_write(self.memory_file, content)
-        return True
+        return self._write_with_scan(self.memory_file, content)
 
     def read_user_profile(self) -> str:
         """Read USER.md user profile content."""
@@ -183,12 +210,7 @@ class MemoryStore:
         Returns:
             True on success, False if blocked by security scan.
         """
-        threat = _scan_memory_content(content)
-        if threat:
-            logger.warning("{}", threat)
-            return False
-        _atomic_write(self.user_file, content)
-        return True
+        return self._write_with_scan(self.user_file, content)
 
     def append_history(self, entry: str) -> None:
         """Append an entry to HISTORY.md with fsync for durability."""
@@ -209,27 +231,11 @@ class MemoryStore:
         """
         parts = []
 
-        long_term = self.read_long_term()
-        if long_term:
-            current = len(long_term)
-            pct = int(current * 100 / memory_limit) if memory_limit > 0 else 0
-            header = (
-                "══════════════════════════════════════════════\n"
-                f"MEMORY (agent notes) [{pct}% — {current:,}/{memory_limit:,} chars]\n"
-                "══════════════════════════════════════════════"
-            )
-            parts.append(f"{header}\n{long_term}")
+        if long_term := self.read_long_term():
+            parts.append(_format_usage_section("MEMORY (agent notes)", long_term, memory_limit))
 
-        user_profile = self.read_user_profile()
-        if user_profile:
-            current = len(user_profile)
-            pct = int(current * 100 / user_limit) if user_limit > 0 else 0
-            header = (
-                "══════════════════════════════════════════════\n"
-                f"USER PROFILE [{pct}% — {current:,}/{user_limit:,} chars]\n"
-                "══════════════════════════════════════════════"
-            )
-            parts.append(f"{header}\n{user_profile}")
+        if user_profile := self.read_user_profile():
+            parts.append(_format_usage_section("USER PROFILE", user_profile, user_limit))
 
         return "\n\n".join(parts) if parts else ""
 
