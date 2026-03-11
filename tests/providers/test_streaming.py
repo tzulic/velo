@@ -10,8 +10,16 @@ from velo.providers.base import LLMProvider, LLMResponse, StreamChunk, ToolCallR
 class FakeProvider(LLMProvider):
     """Minimal provider for testing the default chat_stream fallback."""
 
-    async def chat(self, messages, tools=None, model=None, max_tokens=4096,
-                   temperature=0.7, reasoning_effort=None):
+    async def chat(
+        self,
+        messages,
+        tools=None,
+        model=None,
+        max_tokens=4096,
+        temperature=0.7,
+        reasoning_effort=None,
+        tool_choice="auto",
+    ):
         """Return a canned response."""
         return LLMResponse(
             content="Hello from fake",

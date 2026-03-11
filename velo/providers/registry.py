@@ -79,7 +79,6 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         litellm_prefix="",
         is_direct=True,
     ),
-
     # === Azure OpenAI (direct API calls with API version 2024-10-21) =====
     ProviderSpec(
         name="azure_openai",
@@ -338,6 +337,24 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         detect_by_key_prefix="",
         detect_by_base_keyword="",
         default_api_base="https://api.minimax.io/v1",
+        strip_model_prefix=False,
+        model_overrides=(),
+    ),
+    # Mistral AI: needs "mistral/" prefix for LiteLLM routing.
+    # Keywords cover all Mistral model families.
+    ProviderSpec(
+        name="mistral",
+        keywords=("mistral", "magistral", "devstral", "codestral", "ministral"),
+        env_key="MISTRAL_API_KEY",
+        display_name="Mistral AI",
+        litellm_prefix="mistral",       # mistral-small-latest → mistral/mistral-small-latest
+        skip_prefixes=("mistral/", "openrouter/"),
+        env_extras=(),
+        is_gateway=False,
+        is_local=False,
+        detect_by_key_prefix="",
+        detect_by_base_keyword="",
+        default_api_base="",            # LiteLLM resolves Mistral's base natively
         strip_model_prefix=False,
         model_overrides=(),
     ),
