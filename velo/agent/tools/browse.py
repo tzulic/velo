@@ -59,7 +59,7 @@ def _html_to_markdown(raw_html: str) -> str:
     )
     text = re.sub(
         r"<h([1-6])[^>]*>([\s\S]*?)</h\1>",
-        lambda m: f'\n{"#" * int(m[1])} {_strip_tags(m[2])}\n',
+        lambda m: f"\n{'#' * int(m[1])} {_strip_tags(m[2])}\n",
         text,
         flags=re.I,
     )
@@ -211,11 +211,11 @@ class WebBrowseTool(Tool):
                 "type": "string",
                 "description": "Text to fill, or value to select",
             },
-            "waitFor": {
+            "wait_for": {
                 "type": "string",
                 "description": "CSS selector to wait for after action",
             },
-            "extractMode": {
+            "extract_mode": {
                 "type": "string",
                 "enum": ["markdown", "text", "html"],
                 "description": "Content format for extract (default: markdown)",
@@ -249,8 +249,8 @@ class WebBrowseTool(Tool):
         url: str | None = None,
         selector: str | None = None,
         text: str | None = None,
-        waitFor: str | None = None,
-        extractMode: str = "markdown",
+        wait_for: str | None = None,
+        extract_mode: str = "markdown",
         javascript: str | None = None,
         cookies: list[dict[str, Any]] | None = None,
         **kwargs: Any,
@@ -262,8 +262,8 @@ class WebBrowseTool(Tool):
             url: URL for goto action.
             selector: CSS selector for click/fill/select.
             text: Text to fill or value to select.
-            waitFor: CSS selector to wait for after action.
-            extractMode: Content extraction format.
+            wait_for: CSS selector to wait for after action.
+            extract_mode: Content extraction format.
             javascript: JS code for evaluate action.
             cookies: Cookie objects for set_cookies action.
             **kwargs: Additional parameters (ignored).
@@ -279,7 +279,7 @@ class WebBrowseTool(Tool):
                 if not url:
                     return json.dumps({"error": "url is required for goto action"})
                 await page.goto(url, timeout=timeout_ms, wait_until="networkidle")
-                content = await self._extract(page, extractMode)
+                content = await self._extract(page, extract_mode)
                 return json.dumps(
                     {
                         "url": str(page.url),
@@ -295,63 +295,52 @@ class WebBrowseTool(Tool):
                 if not selector:
                     return json.dumps({"error": "selector is required for click action"})
                 await page.click(selector, timeout=5000)
-                if waitFor:
-                    await page.wait_for_selector(waitFor, timeout=5000)
-                return json.dumps(
-                    {"action": "click", "selector": selector, "url": str(page.url)}
-                )
+                if wait_for:
+                    await page.wait_for_selector(wait_for, timeout=5000)
+                return json.dumps({"action": "click", "selector": selector, "url": str(page.url)})
 
             elif action == "fill":
                 if not selector or text is None:
-                    return json.dumps(
-                        {"error": "selector and text are required for fill action"}
-                    )
+                    return json.dumps({"error": "selector and text are required for fill action"})
                 await page.fill(selector, text)
                 return json.dumps({"action": "fill", "selector": selector})
 
             elif action == "select":
                 if not selector or text is None:
-                    return json.dumps(
-                        {"error": "selector and text are required for select action"}
-                    )
+                    return json.dumps({"error": "selector and text are required for select action"})
                 await page.select_option(selector, text)
-                return json.dumps(
-                    {"action": "select", "selector": selector, "value": text}
-                )
+                return json.dumps({"action": "select", "selector": selector, "value": text})
 
             elif action == "evaluate":
                 if not javascript:
-                    return json.dumps(
-                        {"error": "javascript is required for evaluate action"}
-                    )
+                    return json.dumps({"error": "javascript is required for evaluate action"})
                 result = await page.evaluate(javascript)
                 return json.dumps({"result": result}, ensure_ascii=False, default=str)
 
             elif action == "get_cookies":
                 cookie_list = await page.context.cookies()
-                return json.dumps(
-                    {"cookies": cookie_list}, ensure_ascii=False, default=str
-                )
+                return json.dumps({"cookies": cookie_list}, ensure_ascii=False, default=str)
 
             elif action == "set_cookies":
                 if not cookies:
-                    return json.dumps(
-                        {"error": "cookies array is required for set_cookies action"}
-                    )
+                    return json.dumps({"error": "cookies array is required for set_cookies action"})
                 await page.context.add_cookies(cookies)
                 return json.dumps({"status": "cookies_set", "count": len(cookies)})
 
             elif action == "screenshot":
                 # Save screenshot to the workspace directory with an absolute path
                 import os
-                workspace = os.environ.get("VELO_WORKSPACE", os.path.expanduser("~/.velo/workspace"))
+
+                workspace = os.environ.get(
+                    "VELO_WORKSPACE", os.path.expanduser("~/.velo/workspace")
+                )
                 safe_name = re.sub(r"[^a-zA-Z0-9]", "_", str(page.url))[:50]
                 path = os.path.join(workspace, f"{safe_name}.png")
                 await page.screenshot(path=path)
                 return json.dumps({"path": path, "url": str(page.url)})
 
             elif action == "extract":
-                content = await self._extract(page, extractMode)
+                content = await self._extract(page, extract_mode)
                 return json.dumps(
                     {
                         "url": str(page.url),

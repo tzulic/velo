@@ -4,13 +4,16 @@ Requires a2a-sdk to be installed.  Tests are skipped automatically when the
 package is absent so the CI suite remains green in non-A2A environments.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 pytest.importorskip("a2a", reason="a2a-sdk not installed — skipping executor tests")
 
 
-def _make_context(task_id: str = "task-1", context_id: str = "ctx-1", text: str = "Hello") -> MagicMock:
+def _make_context(
+    task_id: str = "task-1", context_id: str = "ctx-1", text: str = "Hello"
+) -> MagicMock:
     ctx = MagicMock()
     ctx.task_id = task_id
     ctx.context_id = context_id

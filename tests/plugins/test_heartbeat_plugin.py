@@ -13,6 +13,7 @@ from velo.plugins.types import PluginContext, RuntimeRefs
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_refs(**overrides) -> RuntimeRefs:
     defaults = {
         "provider": MagicMock(),
@@ -28,6 +29,7 @@ def _make_refs(**overrides) -> RuntimeRefs:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestHeartbeatPluginSetup:
     """Tests for the heartbeat plugin setup() entry point."""

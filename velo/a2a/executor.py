@@ -50,9 +50,7 @@ class VeloAgentExecutor(AgentExecutor):
             )
             updater.update_status(
                 TaskState.completed,
-                message=updater.new_agent_message(
-                    parts=[Part(root=TextPart(text=result or ""))]
-                ),
+                message=updater.new_agent_message(parts=[Part(root=TextPart(text=result or ""))]),
             )
         except Exception as exc:
             updater.update_status(

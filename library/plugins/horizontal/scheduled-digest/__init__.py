@@ -121,13 +121,9 @@ class _DigestService:
     async def start(self) -> None:
         """Compute next fire time and start the scheduler task."""
         try:
-            self._next_fire = _compute_next_fire(
-                self._frequency, self._time_str, self._timezone
-            )
+            self._next_fire = _compute_next_fire(self._frequency, self._time_str, self._timezone)
         except ValueError:
-            logger.error(
-                "scheduled_digest.invalid_time: %s — service not started", self._time_str
-            )
+            logger.error("scheduled_digest.invalid_time: %s — service not started", self._time_str)
             return
         self._task = asyncio.create_task(self._run())
         logger.info("scheduled_digest.started: next=%s", self._get_next_str())
@@ -202,10 +198,7 @@ class _DigestService:
         """
         if self._next_fire is None:
             return "Next digest: not scheduled"
-        return (
-            f"Next digest: {self._next_fire.strftime('%a %Y-%m-%d %H:%M')} "
-            f"{self._timezone}"
-        )
+        return f"Next digest: {self._next_fire.strftime('%a %Y-%m-%d %H:%M')} {self._timezone}"
 
 
 # ---------------------------------------------------------------------------
@@ -231,10 +224,7 @@ class SendDigestNowTool(Tool):
     @property
     def description(self) -> str:
         """Tool description."""
-        return (
-            "Send the scheduled digest immediately without waiting "
-            "for the next scheduled time."
-        )
+        return "Send the scheduled digest immediately without waiting for the next scheduled time."
 
     @property
     def parameters(self) -> dict[str, Any]:

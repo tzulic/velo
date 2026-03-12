@@ -19,10 +19,12 @@ def _make_loop():
     workspace = MagicMock()
     workspace.__truediv__ = MagicMock(return_value=MagicMock())
 
-    with patch("velo.agent.loop.ContextBuilder"), \
-         patch("velo.agent.loop.SessionManager"), \
-         patch("velo.agent.loop.SubagentManager") as MockSubMgr:
-        MockSubMgr.return_value.cancel_by_session = AsyncMock(return_value=0)
+    with (
+        patch("velo.agent.loop.ContextBuilder"),
+        patch("velo.agent.loop.SessionManager"),
+        patch("velo.agent.loop.SubagentManager") as mock_sub_mgr,
+    ):
+        mock_sub_mgr.return_value.cancel_by_session = AsyncMock(return_value=0)
         loop = AgentLoop(bus=bus, provider=provider, workspace=workspace)
     return loop, bus
 

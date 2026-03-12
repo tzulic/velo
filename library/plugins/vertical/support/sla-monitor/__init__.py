@@ -127,22 +127,17 @@ class _SLAMonitor:
                 hours_ago = int(elapsed.total_seconds() / 3600)
                 mins_ago = int((elapsed.total_seconds() % 3600) / 60)
                 elapsed_str = f"{hours_ago}h {mins_ago}m" if hours_ago else f"{mins_ago}m"
-                alerts.append(
-                    f'- {ticket_id} ({priority}): BREACHED {elapsed_str} ago — "{title}"'
-                )
+                alerts.append(f'- {ticket_id} ({priority}): BREACHED {elapsed_str} ago — "{title}"')
             elif deadline < now + self._warning_delta:
                 remaining = deadline - now
                 rem_hours = int(remaining.total_seconds() / 3600)
                 rem_mins = int((remaining.total_seconds() % 3600) / 60)
                 rem_str = f"{rem_hours}h {rem_mins}m" if rem_hours else f"{rem_mins}m"
-                alerts.append(
-                    f'- {ticket_id} ({priority}): deadline in {rem_str} — "{title}"'
-                )
+                alerts.append(f'- {ticket_id} ({priority}): deadline in {rem_str} — "{title}"')
 
         if alerts and self._process_direct is not None:
-            alert_text = (
-                f"[SLA Alert] {len(alerts)} ticket(s) at risk or breached:\n"
-                + "\n".join(alerts)
+            alert_text = f"[SLA Alert] {len(alerts)} ticket(s) at risk or breached:\n" + "\n".join(
+                alerts
             )
             logger.warning("sla_monitor.alerts_triggered: count=%d", len(alerts))
             await self._process_direct(
@@ -195,9 +190,7 @@ class _SLAMonitor:
             else:
                 state = "OK"
 
-            lines.append(
-                f"{ticket_id:<12} {priority:<10} {status:<12} {deadline_str:<25} {state}"
-            )
+            lines.append(f"{ticket_id:<12} {priority:<10} {status:<12} {deadline_str:<25} {state}")
 
         if len(lines) <= 3:
             lines.append("  No open tickets.")

@@ -129,7 +129,7 @@ class WebFetchTool(Tool):
         "type": "object",
         "properties": {
             "url": {"type": "string", "description": "URL to fetch"},
-            "maxChars": {"type": "integer", "minimum": 100},
+            "max_chars": {"type": "integer", "minimum": 100},
         },
         "required": ["url"],
     }
@@ -161,14 +161,14 @@ class WebFetchTool(Tool):
     async def execute(
         self,
         url: str,
-        maxChars: int | None = None,
+        max_chars: int | None = None,
         **kwargs: Any,
     ) -> str:
         """Fetch and extract content from a URL via Parallel.ai.
 
         Args:
             url: URL to fetch.
-            maxChars: Override for max characters to return.
+            max_chars: Override for max characters to return.
             **kwargs: Additional parameters (ignored).
 
         Returns:
@@ -187,7 +187,7 @@ class WebFetchTool(Tool):
                 ensure_ascii=False,
             )
 
-        max_chars = maxChars or self.max_chars
+        max_chars = max_chars or self.max_chars
 
         try:
             logger.debug("WebFetch: extracting content from '{}'", url)

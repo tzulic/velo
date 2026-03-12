@@ -67,9 +67,7 @@ class _TicketStore:
     def save(self) -> None:
         """Persist tickets to workspace/tickets.json."""
         try:
-            self._path.write_text(
-                json.dumps([asdict(t) for t in self._tickets.values()], indent=2)
-            )
+            self._path.write_text(json.dumps([asdict(t) for t in self._tickets.values()], indent=2))
         except OSError:
             logger.exception("ticket_tracker.save_failed")
 
@@ -141,7 +139,6 @@ def _fmt(t: _Ticket) -> str:
         f"  Description: {t.description}\n"
         f"  Created: {t.created_at} | Updated: {t.updated_at}"
     )
-
 
 
 class CreateTicketTool(Tool):
@@ -255,8 +252,16 @@ class ListTicketsTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "status": {"type": "string", "default": "", "description": "Filter by status (empty = all)"},
-                "priority": {"type": "string", "default": "", "description": "Filter by priority (empty = all)"},
+                "status": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Filter by status (empty = all)",
+                },
+                "priority": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Filter by priority (empty = all)",
+                },
             },
             "required": [],
         }

@@ -97,15 +97,12 @@ class _RateLimiter:
         """
         now = time()
         self._purge_old(self._global_times, now)
-        lines = [
-            f"Global: {len(self._global_times)}/{self._max} in last {self._window}s"
-        ]
+        lines = [f"Global: {len(self._global_times)}/{self._max} in last {self._window}s"]
         if self._per_channel_max > 0 and chat_id and chat_id in self._per_channel:
             ch = self._per_channel[chat_id]
             self._purge_old(ch, now)
             lines.append(
-                f"Channel '{chat_id}': {len(ch)}/{self._per_channel_max}"
-                f" in last {self._window}s"
+                f"Channel '{chat_id}': {len(ch)}/{self._per_channel_max} in last {self._window}s"
             )
         return "\n".join(lines)
 
@@ -117,10 +114,7 @@ class _RateLimiter:
         """
         now = time()
         self._purge_old(self._global_times, now)
-        return (
-            f"Rate limiter: {len(self._global_times)}/{self._max}"
-            f" msgs in last {self._window}s"
-        )
+        return f"Rate limiter: {len(self._global_times)}/{self._max} msgs in last {self._window}s"
 
 
 # ---------------------------------------------------------------------------

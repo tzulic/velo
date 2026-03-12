@@ -76,7 +76,9 @@ def _build_a2a_app(a2a_config: "A2AConfig", workspace: Path, agent_loop: "AgentL
     return _BearerAuthMiddleware(starlette_app, a2a_config.api_key)
 
 
-async def start_a2a_server(a2a_config: "A2AConfig", workspace: Path, agent_loop: "AgentLoop") -> None:
+async def start_a2a_server(
+    a2a_config: "A2AConfig", workspace: Path, agent_loop: "AgentLoop"
+) -> None:
     """Run the A2A server as an asyncio task alongside the main gateway.
 
     Installs no signal handlers to avoid conflicts with the gateway's signal

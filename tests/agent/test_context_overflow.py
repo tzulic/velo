@@ -60,12 +60,18 @@ class TestTrimToBudget:
         """Removing an assistant+tool_calls also removes orphaned tool results."""
         msgs = [
             {"role": "system", "content": "System."},
-            {"role": "assistant", "content": None, "tool_calls": [
-                {"id": "tc_001", "type": "function",
-                 "function": {"name": "read_file", "arguments": '{"path":"x"}'}},
-            ]},
-            {"role": "tool", "content": "file contents here " * 50,
-             "tool_call_id": "tc_001"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "tc_001",
+                        "type": "function",
+                        "function": {"name": "read_file", "arguments": '{"path":"x"}'},
+                    },
+                ],
+            },
+            {"role": "tool", "content": "file contents here " * 50, "tool_call_id": "tc_001"},
             {"role": "user", "content": "Thanks! " + "y" * 500},
         ]
         # Budget so small that the tool pair must be removed
@@ -147,6 +153,8 @@ class TestReactiveTrim:
         ]
         final_content, _, _ = await loop._run_agent_loop(messages)
 
-        assert "error" in (final_content or "").lower() or "context" in (final_content or "").lower()
+        assert (
+            "error" in (final_content or "").lower() or "context" in (final_content or "").lower()
+        )
         # Only called once since trimming doesn't reduce message count
         assert loop.provider.chat.call_count == 1

@@ -2,7 +2,7 @@
 
 import json
 import sys
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -179,9 +179,7 @@ def _make_mock_page() -> MagicMock:
     mock_page.is_closed.return_value = False
     mock_page.goto = AsyncMock()
     mock_page.title = AsyncMock(return_value="Example")
-    mock_page.content = AsyncMock(
-        return_value="<html><body><p>Hello world</p></body></html>"
-    )
+    mock_page.content = AsyncMock(return_value="<html><body><p>Hello world</p></body></html>")
     mock_page.click = AsyncMock()
     mock_page.fill = AsyncMock()
     mock_page.select_option = AsyncMock()
@@ -255,9 +253,7 @@ class TestWebBrowseTool:
     async def test_get_set_cookies(self) -> None:
         """get_cookies and set_cookies should interact with context."""
         tool, mock_page = _make_tool()
-        mock_page.context.cookies = AsyncMock(
-            return_value=[{"name": "session", "value": "abc"}]
-        )
+        mock_page.context.cookies = AsyncMock(return_value=[{"name": "session", "value": "abc"}])
 
         result = await tool.execute(action="get_cookies")
         data = json.loads(result)

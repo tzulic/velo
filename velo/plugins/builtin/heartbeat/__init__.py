@@ -10,7 +10,7 @@ When active, the manual heartbeat code in the gateway skips itself
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
@@ -59,11 +59,14 @@ class HeartbeatPlugin:
             if refs.publish_outbound is None:
                 return
             from velo.bus.events import OutboundMessage
-            await refs.publish_outbound(OutboundMessage(
-                channel="cli",
-                chat_id="direct",
-                content=response,
-            ))
+
+            await refs.publish_outbound(
+                OutboundMessage(
+                    channel="cli",
+                    chat_id="direct",
+                    content=response,
+                )
+            )
 
         self._service = HeartbeatService(
             workspace=self.workspace,

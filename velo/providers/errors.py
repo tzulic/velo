@@ -19,17 +19,30 @@ def classify_error(error_msg: str) -> str:
     # Order matters: check specific patterns first.
     if any(k in msg for k in ("rate limit", "429", "too many requests", "quota")):
         return "rate_limit"
-    if any(k in msg for k in (
-        "context length", "too many tokens", "maximum context",
-        "context_length_exceeded",
-    )):
+    if any(
+        k in msg
+        for k in (
+            "context length",
+            "too many tokens",
+            "maximum context",
+            "context_length_exceeded",
+        )
+    ):
         return "context_overflow"
     # Reason: Check server errors before timeout — "504 Gateway Timeout"
     # contains "timeout" but is a server error, not a client timeout.
-    if any(k in msg for k in (
-        "500", "502", "503", "504",
-        "internal server error", "overloaded", "bad gateway",
-    )):
+    if any(
+        k in msg
+        for k in (
+            "500",
+            "502",
+            "503",
+            "504",
+            "internal server error",
+            "overloaded",
+            "bad gateway",
+        )
+    ):
         return "server_error"
     if any(k in msg for k in ("timeout", "timed out", "deadline")):
         return "timeout"

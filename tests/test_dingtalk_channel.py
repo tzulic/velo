@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 import pytest
 
 from velo.bus.queue import MessageBus

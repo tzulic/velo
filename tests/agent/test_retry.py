@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -51,7 +50,9 @@ class TestChatWithRetry:
         assert loop.provider.chat.call_count == 1
 
     @patch("velo.agent.llm_helpers.asyncio.sleep", new_callable=AsyncMock)
-    async def test_retryable_error_retries_max_times(self, mock_sleep: AsyncMock, make_loop) -> None:
+    async def test_retryable_error_retries_max_times(
+        self, mock_sleep: AsyncMock, make_loop
+    ) -> None:
         """Retryable errors cause up to MAX_RETRIES attempts."""
         from velo.agent.llm_helpers import MAX_RETRIES
 

@@ -130,8 +130,10 @@ class _WebhookServer:
 
     def _make_handler(self, route_cfg: dict[str, Any]) -> Any:
         """Return an aiohttp handler closure for a route."""
+
         async def handler(request: Any) -> Any:
             return await self._handle(request, route_cfg)
+
         return handler
 
     async def _handle(self, request: Any, route_cfg: dict[str, Any]) -> Any:
@@ -184,9 +186,7 @@ class _WebhookServer:
         await self._inject_to_agent(event)
         return web.Response(status=200, text="OK")
 
-    def _verify_sig(
-        self, service: str, raw_body: bytes, headers: Any, secret: str
-    ) -> bool:
+    def _verify_sig(self, service: str, raw_body: bytes, headers: Any, secret: str) -> bool:
         """Route to the correct signature verifier based on service name."""
         if service == "stripe":
             return _verify_stripe(raw_body, headers.get("Stripe-Signature", ""), secret)

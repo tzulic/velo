@@ -241,9 +241,7 @@ def setup(ctx: PluginContext) -> None:
 
     store = _CSATStore(ctx.workspace)
 
-    def on_after_tool_call(
-        value: str, tool_name: str = "", params: str = "", **_: Any
-    ) -> str:
+    def on_after_tool_call(value: str, tool_name: str = "", params: str = "", **_: Any) -> str:
         """Append survey invitation when a ticket is marked resolved.
 
         Args:

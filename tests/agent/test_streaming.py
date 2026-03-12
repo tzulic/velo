@@ -34,7 +34,9 @@ class TestChatStreamToResponse:
             StreamChunk(finish_reason="stop"),
         )
 
-        response = await loop._chat_stream_to_response(on_progress, messages=[], tools=None, model="m")
+        response = await loop._chat_stream_to_response(
+            on_progress, messages=[], tools=None, model="m"
+        )
 
         assert response.content == "Hello world."
         assert response.finish_reason == "stop"
@@ -59,7 +61,9 @@ class TestChatStreamToResponse:
             StreamChunk(tool_calls=[tc], finish_reason="tool_calls"),
         )
 
-        response = await loop._chat_stream_to_response(on_progress, messages=[], tools=None, model="m")
+        response = await loop._chat_stream_to_response(
+            on_progress, messages=[], tools=None, model="m"
+        )
 
         assert response.has_tool_calls
         assert response.tool_calls[0].name == "read_file"
@@ -77,7 +81,9 @@ class TestChatStreamToResponse:
             StreamChunk(finish_reason="stop"),
         )
 
-        response = await loop._chat_stream_to_response(on_progress, messages=[], tools=None, model="m")
+        response = await loop._chat_stream_to_response(
+            on_progress, messages=[], tools=None, model="m"
+        )
 
         assert response.content is None
         assert response.finish_reason == "stop"

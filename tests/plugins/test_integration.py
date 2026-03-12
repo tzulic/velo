@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -14,6 +13,7 @@ from velo.plugins.manager import PluginManager
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_plugin(base_dir: Path, name: str, setup_code: str) -> Path:
     """Create a plugin package under base_dir/plugins/{name}/__init__.py."""
     plugin_dir = base_dir / "plugins" / name
@@ -22,7 +22,7 @@ def _write_plugin(base_dir: Path, name: str, setup_code: str) -> Path:
     return plugin_dir
 
 
-_TOOL_PLUGIN = '''
+_TOOL_PLUGIN = """
 from velo.plugins.types import PluginContext
 from velo.agent.tools.base import Tool
 from typing import Any
@@ -46,21 +46,22 @@ class PingTool(Tool):
 def setup(ctx: PluginContext) -> None:
     ctx.register_tool(PingTool())
     ctx.add_context_provider(lambda: "Plugin: PingTool is available.")
-'''
+"""
 
-_PROMPT_HOOK_PLUGIN = '''
+_PROMPT_HOOK_PLUGIN = """
 from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     def add_footer(value: str) -> str:
         return value + "\\n\\n[Plugin Footer]"
     ctx.on("after_prompt_build", add_footer)
-'''
+"""
 
 
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestPluginContextIntegration:
     """Test that plugins integrate with ContextBuilder."""
@@ -133,12 +134,16 @@ class TestPluginContextIntegration:
         # Create a "builtin" plugin directory manually (simulating the real builtin dir)
         # Note: In practice, workspace plugins override by loading after builtins.
         # This test verifies discovery order by checking workspace plugin is loaded.
-        _write_plugin(tmp_path, "override_me", '''
+        _write_plugin(
+            tmp_path,
+            "override_me",
+            """
 from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     ctx.add_context_provider(lambda: "workspace version")
-''')
+""",
+        )
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
         ctx = await mgr.get_context_additions()

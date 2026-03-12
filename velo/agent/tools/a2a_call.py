@@ -81,6 +81,7 @@ class CallAgentTool(Tool):
             # Lazy import so the tool works even if a2a-sdk is not installed
             # and A2A is not configured (the import only runs when we have a peer).
             from velo.a2a.client import send_task_to_peer
+
             return await send_task_to_peer(url, api_key, task)
         except Exception as exc:
             return f"Failed to reach agent at {url}: {exc}"

@@ -18,8 +18,8 @@ BASE_DELAY = 1.0  # seconds
 
 # Context trimming thresholds
 PROACTIVE_TRIM_THRESHOLD = 0.90  # Trim when > 90% of context window
-PROACTIVE_TRIM_TARGET = 0.70     # Trim down to 70%
-REACTIVE_TRIM_TARGET = 0.50      # Aggressive trim on overflow error
+PROACTIVE_TRIM_TARGET = 0.70  # Trim down to 70%
+REACTIVE_TRIM_TARGET = 0.50  # Aggressive trim on overflow error
 
 # Streaming buffer size
 STREAM_BUFFER_CHARS = 80  # Emit buffered text every N chars
@@ -42,7 +42,9 @@ async def chat_with_retry(provider: LLMProvider, **kwargs: Any) -> LLMResponse:
             logger.warning(
                 "llm.retry_attempt: {} ({}/{}), backoff {:.1f}s",
                 response.error_code if response else "unknown",  # type: ignore[union-attr]
-                attempt, MAX_RETRIES, delay,
+                attempt,
+                MAX_RETRIES,
+                delay,
             )
             await asyncio.sleep(delay)
         response = await provider.chat(**kwargs)
@@ -86,8 +88,9 @@ async def chat_stream_to_response(
             content_parts.append(chunk.delta)
             buffer += chunk.delta
             # Emit on sentence boundaries or when buffer is large enough
-            if (len(buffer) >= STREAM_BUFFER_CHARS
-                    or buffer.rstrip().endswith((".", "!", "?", "\n"))):
+            if len(buffer) >= STREAM_BUFFER_CHARS or buffer.rstrip().endswith(
+                (".", "!", "?", "\n")
+            ):
                 await on_progress(buffer)
                 buffer = ""
         if chunk.tool_calls:
@@ -166,7 +169,8 @@ def trim_to_budget(messages: list[dict[str, Any]], token_budget: int) -> list[di
         # call IDs — orphaned tool results cause provider 400 errors.
         if removed.get("role") == "assistant" and removed.get("tool_calls"):
             orphan_ids = {
-                tc["id"] for tc in removed.get("tool_calls", [])
+                tc["id"]
+                for tc in removed.get("tool_calls", [])
                 if isinstance(tc, dict) and "id" in tc
             }
             # Mark current message for removal
@@ -176,8 +180,10 @@ def trim_to_budget(messages: list[dict[str, Any]], token_budget: int) -> list[di
             for j in range(idx + 1, len(middle)):
                 if middle[j] is None:
                     continue
-                if (middle[j].get("role") == "tool"  # type: ignore[union-attr]
-                        and middle[j].get("tool_call_id") in orphan_ids):  # type: ignore[union-attr]
+                if (
+                    middle[j].get("role") == "tool"  # type: ignore[union-attr]
+                    and middle[j].get("tool_call_id") in orphan_ids
+                ):  # type: ignore[union-attr]
                     current_tokens -= _msg_tokens(middle[j])  # type: ignore[arg-type]
                     middle[j] = None  # type: ignore[assignment]
         else:
@@ -193,6 +199,8 @@ def trim_to_budget(messages: list[dict[str, Any]], token_budget: int) -> list[di
     if trimmed_count > 0:
         logger.info(
             "context.trim_completed: removed {} messages, {} → {} est. tokens",
-            trimmed_count, total_tokens, current_tokens,
+            trimmed_count,
+            total_tokens,
+            current_tokens,
         )
     return result

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -13,6 +12,7 @@ from velo.plugins.manager import PluginManager
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_plugin(base_dir: Path, name: str, setup_code: str) -> Path:
     """Create a plugin package under base_dir/plugins/{name}/__init__.py."""
     plugin_dir = base_dir / "plugins" / name
@@ -21,7 +21,7 @@ def _write_plugin(base_dir: Path, name: str, setup_code: str) -> Path:
     return plugin_dir
 
 
-_TOOL_PLUGIN = '''
+_TOOL_PLUGIN = """
 from velo.plugins.types import PluginContext
 from velo.agent.tools.base import Tool
 from typing import Any
@@ -44,37 +44,37 @@ class GreetTool(Tool):
 
 def setup(ctx: PluginContext) -> None:
     ctx.register_tool(GreetTool())
-'''
+"""
 
-_CONTEXT_PLUGIN = '''
+_CONTEXT_PLUGIN = """
 from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     ctx.add_context_provider(lambda: "Plugin context from test_context_plugin")
-'''
+"""
 
-_HOOK_PLUGIN = '''
+_HOOK_PLUGIN = """
 from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     def modify_prompt(value: str) -> str:
         return value + "\\n[HOOK INJECTED]"
     ctx.on("after_prompt_build", modify_prompt, priority=50)
-'''
+"""
 
-_FAILING_PLUGIN = '''
+_FAILING_PLUGIN = """
 from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     raise RuntimeError("Plugin setup intentionally failed!")
-'''
+"""
 
-_NO_SETUP_PLUGIN = '''
+_NO_SETUP_PLUGIN = """
 # This plugin has no setup() function
 x = 42
-'''
+"""
 
-_STARTUP_SHUTDOWN_PLUGIN = '''
+_STARTUP_SHUTDOWN_PLUGIN = """
 from velo.plugins.types import PluginContext
 
 _state = {"started": False, "stopped": False}
@@ -86,20 +86,21 @@ def setup(ctx: PluginContext) -> None:
         _state["stopped"] = True
     ctx.on("on_startup", on_start)
     ctx.on("on_shutdown", on_stop)
-'''
+"""
 
-_CONFIG_PLUGIN = '''
+_CONFIG_PLUGIN = """
 from velo.plugins.types import PluginContext
 
 captured_config = {}
 
 def setup(ctx: PluginContext) -> None:
     captured_config.update(ctx.config)
-'''
+"""
 
 # ---------------------------------------------------------------------------
 # Discovery tests
 # ---------------------------------------------------------------------------
+
 
 class TestDiscovery:
     """Tests for plugin discovery."""
@@ -157,6 +158,7 @@ class TestDiscovery:
 # ---------------------------------------------------------------------------
 # Loading tests
 # ---------------------------------------------------------------------------
+
 
 class TestLoading:
     """Tests for plugin loading and setup()."""
@@ -224,6 +226,7 @@ class TestLoading:
         await mgr.load_all()
         # Import the module to check captured_config
         import importlib
+
         mod = importlib.import_module("velo_plugin_cfg_plugin")
         assert mod.captured_config == {"api_key": "sk-test", "model": "gpt-4"}
 
@@ -231,6 +234,7 @@ class TestLoading:
 # ---------------------------------------------------------------------------
 # Hook dispatch tests
 # ---------------------------------------------------------------------------
+
 
 class TestHookDispatch:
     """Tests for fire() and pipe() hook dispatch."""
@@ -247,13 +251,13 @@ class TestHookDispatch:
     @pytest.mark.asyncio
     async def test_pipe_priority_order(self, tmp_path: Path) -> None:
         """Lower priority hooks should run first in pipe()."""
-        plugin_code = '''
+        plugin_code = """
 from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     ctx.on("after_prompt_build", lambda value: value + " [B]", priority=200)
     ctx.on("after_prompt_build", lambda value: value + " [A]", priority=10)
-'''
+"""
         _write_plugin(tmp_path, "priority_plugin", plugin_code)
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
@@ -263,7 +267,7 @@ def setup(ctx: PluginContext) -> None:
     @pytest.mark.asyncio
     async def test_pipe_skips_failing_callback(self, tmp_path: Path) -> None:
         """A failing callback in pipe() should be skipped, passing value through."""
-        plugin_code = '''
+        plugin_code = """
 from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
@@ -273,7 +277,7 @@ def setup(ctx: PluginContext) -> None:
         return value + " [OK]"
     ctx.on("after_prompt_build", fail_hook, priority=10)
     ctx.on("after_prompt_build", good_hook, priority=20)
-'''
+"""
         _write_plugin(tmp_path, "mixed_plugin", plugin_code)
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
@@ -283,14 +287,14 @@ def setup(ctx: PluginContext) -> None:
     @pytest.mark.asyncio
     async def test_fire_does_not_propagate_errors(self, tmp_path: Path) -> None:
         """fire() should log but not raise on callback errors."""
-        plugin_code = '''
+        plugin_code = """
 from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     def crash():
         raise RuntimeError("startup crash")
     ctx.on("on_startup", crash)
-'''
+"""
         _write_plugin(tmp_path, "crash_plugin", plugin_code)
         mgr = PluginManager(workspace=tmp_path, config={})
         # Should not raise
@@ -299,7 +303,7 @@ def setup(ctx: PluginContext) -> None:
     @pytest.mark.asyncio
     async def test_fire_and_forget_runs_all(self, tmp_path: Path) -> None:
         """fire() should run all callbacks even if one fails."""
-        plugin_code = '''
+        plugin_code = """
 from velo.plugins.types import PluginContext
 
 results = []
@@ -311,11 +315,12 @@ def setup(ctx: PluginContext) -> None:
         results.append("ran")
     ctx.on("on_startup", crash, priority=10)
     ctx.on("on_startup", succeed, priority=20)
-'''
+"""
         _write_plugin(tmp_path, "mixed_fire", plugin_code)
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
         import importlib
+
         mod = importlib.import_module("velo_plugin_mixed_fire")
         assert mod.results == ["ran"]
 
@@ -326,6 +331,7 @@ def setup(ctx: PluginContext) -> None:
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
         import importlib
+
         mod = importlib.import_module("velo_plugin_lifecycle")
         assert mod._state["started"] is True
         assert mod._state["stopped"] is False
@@ -343,14 +349,14 @@ def setup(ctx: PluginContext) -> None:
     @pytest.mark.asyncio
     async def test_async_hook(self, tmp_path: Path) -> None:
         """Async hook callbacks should work correctly."""
-        plugin_code = '''
+        plugin_code = """
 from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     async def async_modify(value):
         return value + " [ASYNC]"
     ctx.on("after_prompt_build", async_modify)
-'''
+"""
         _write_plugin(tmp_path, "async_plugin", plugin_code)
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
@@ -361,6 +367,7 @@ def setup(ctx: PluginContext) -> None:
 # ---------------------------------------------------------------------------
 # Context additions tests
 # ---------------------------------------------------------------------------
+
 
 class TestContextAdditions:
     """Tests for get_context_additions()."""
@@ -375,14 +382,14 @@ class TestContextAdditions:
     @pytest.mark.asyncio
     async def test_async_context_provider(self, tmp_path: Path) -> None:
         """Async context providers should work."""
-        plugin_code = '''
+        plugin_code = """
 from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
     async def async_ctx():
         return "async context data"
     ctx.add_context_provider(async_ctx)
-'''
+"""
         _write_plugin(tmp_path, "async_ctx_plugin", plugin_code)
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
@@ -392,7 +399,7 @@ def setup(ctx: PluginContext) -> None:
     @pytest.mark.asyncio
     async def test_failing_provider_skipped(self, tmp_path: Path) -> None:
         """A failing context provider should be skipped."""
-        plugin_code = '''
+        plugin_code = """
 from velo.plugins.types import PluginContext
 
 def setup(ctx: PluginContext) -> None:
@@ -402,7 +409,7 @@ def setup(ctx: PluginContext) -> None:
         return "good context"
     ctx.add_context_provider(fail)
     ctx.add_context_provider(succeed)
-'''
+"""
         _write_plugin(tmp_path, "mixed_ctx", plugin_code)
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
@@ -413,6 +420,7 @@ def setup(ctx: PluginContext) -> None:
 # ---------------------------------------------------------------------------
 # Introspection tests
 # ---------------------------------------------------------------------------
+
 
 class TestIntrospection:
     """Tests for PluginManager property accessors."""

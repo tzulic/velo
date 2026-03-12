@@ -134,7 +134,9 @@ class TestSearchDeferred:
     def test_returns_tuples_of_name_and_description(self) -> None:
         """Results are (name, description) tuples."""
         reg = ToolRegistry()
-        reg.register(_make_tool("mcp_github_create_pr", "Create a GitHub pull request"), deferred=True)
+        reg.register(
+            _make_tool("mcp_github_create_pr", "Create a GitHub pull request"), deferred=True
+        )
         results = reg.search_deferred("pull request")
         assert len(results) >= 1
         name, desc = results[0]
@@ -145,7 +147,9 @@ class TestSearchDeferred:
         """search_deferred() returns at most `limit` results."""
         reg = ToolRegistry()
         for i in range(10):
-            reg.register(_make_tool(f"mcp_test_tool{i}", f"Tool number {i} for testing"), deferred=True)
+            reg.register(
+                _make_tool(f"mcp_test_tool{i}", f"Tool number {i} for testing"), deferred=True
+            )
         results = reg.search_deferred("tool testing", limit=3)
         assert len(results) <= 3
 
@@ -222,7 +226,9 @@ class TestSearchToolsTool:
     async def test_result_lists_activated_tools(self) -> None:
         """Result message lists activated tool names."""
         reg = ToolRegistry()
-        reg.register(_make_tool("mcp_github_create_pr", "Create a GitHub pull request"), deferred=True)
+        reg.register(
+            _make_tool("mcp_github_create_pr", "Create a GitHub pull request"), deferred=True
+        )
         tool = SearchToolsTool(reg)
         result = await tool.execute(query="create pull request")
         assert "Activated" in result

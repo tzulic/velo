@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -13,12 +12,12 @@ from velo.plugins.manager import PluginManager
 from velo.plugins.types import (
     PluginContext,
     RuntimeRefs,
-    ServiceLike,
 )
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 class FakeService:
     """Minimal ServiceLike implementation."""
@@ -77,6 +76,7 @@ def _make_refs(**overrides: Any) -> RuntimeRefs:
 # PluginContext tests
 # ---------------------------------------------------------------------------
 
+
 class TestPluginContextServices:
     """Tests for register_service / register_channel on PluginContext."""
 
@@ -104,6 +104,7 @@ class TestPluginContextServices:
 # ---------------------------------------------------------------------------
 # PluginManager tests
 # ---------------------------------------------------------------------------
+
 
 class TestPluginManagerRuntime:
     """Tests for set_runtime, start/stop services."""
@@ -185,6 +186,7 @@ class TestPluginManagerRuntime:
             call_order.append(f"hook:svc_stopped={svc.stopped}")
 
         from velo.plugins.types import HookEntry
+
         mgr._hooks["on_shutdown"].append(HookEntry(callback=on_shutdown_hook))
         mgr._services.append(svc)  # Added twice intentionally for the stop tracking
 

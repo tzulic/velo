@@ -35,6 +35,7 @@ _BUILTIN_DIR = Path(__file__).parent / "builtin"
 # PluginManager
 # ---------------------------------------------------------------------------
 
+
 class PluginManager:
     """
     Discovers, loads, and manages nanobot plugins.
@@ -68,7 +69,10 @@ class PluginManager:
         """
         found: dict[str, PluginMeta] = {}
 
-        for source, base_dir in [("builtin", _BUILTIN_DIR), ("workspace", self._workspace / "plugins")]:
+        for source, base_dir in [
+            ("builtin", _BUILTIN_DIR),
+            ("workspace", self._workspace / "plugins"),
+        ]:
             if not base_dir.is_dir():
                 continue
             for candidate in sorted(base_dir.iterdir()):

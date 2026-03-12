@@ -14,18 +14,19 @@ from velo.providers.registry import find_by_model
 runner = CliRunner()
 
 
-class _StopGateway(RuntimeError):
+class _StopGatewayError(RuntimeError):
     pass
 
 
 @pytest.fixture
 def mock_paths():
     """Mock config/workspace paths for test isolation."""
-    with patch("velo.config.loader.get_config_path") as mock_cp, \
-         patch("velo.config.loader.save_config") as mock_sc, \
-         patch("velo.config.loader.load_config") as mock_lc, \
-         patch("velo.cli.commands.get_workspace_path") as mock_ws:
-
+    with (
+        patch("velo.config.loader.get_config_path") as mock_cp,
+        patch("velo.config.loader.save_config") as mock_sc,
+        patch("velo.config.loader.load_config"),
+        patch("velo.cli.commands.get_workspace_path") as mock_ws,
+    ):
         base_dir = Path("./test_onboard_data")
         if base_dir.exists():
             shutil.rmtree(base_dir)
@@ -141,15 +142,16 @@ def mock_agent_runtime(tmp_path):
     config.agents.defaults.workspace = str(tmp_path / "default-workspace")
     cron_dir = tmp_path / "data" / "cron"
 
-    with patch("velo.config.loader.load_config", return_value=config) as mock_load_config, \
-         patch("velo.config.paths.get_cron_dir", return_value=cron_dir), \
-         patch("velo.cli.commands.sync_workspace_templates") as mock_sync_templates, \
-         patch("velo.cli.commands._make_provider", return_value=object()), \
-         patch("velo.cli.commands._print_agent_response") as mock_print_response, \
-         patch("velo.bus.queue.MessageBus"), \
-         patch("velo.cron.service.CronService"), \
-         patch("velo.agent.loop.AgentLoop") as mock_agent_loop_cls:
-
+    with (
+        patch("velo.config.loader.load_config", return_value=config) as mock_load_config,
+        patch("velo.config.paths.get_cron_dir", return_value=cron_dir),
+        patch("velo.cli.commands.sync_workspace_templates") as mock_sync_templates,
+        patch("velo.cli.commands._make_provider", return_value=object()),
+        patch("velo.cli.commands._print_agent_response") as mock_print_response,
+        patch("velo.bus.queue.MessageBus"),
+        patch("velo.cron.service.CronService"),
+        patch("velo.agent.loop.AgentLoop") as mock_agent_loop_cls,
+    ):
         agent_loop = MagicMock()
         agent_loop.channels_config = None
         agent_loop.process_direct = AsyncMock(return_value="mock-response")
@@ -189,7 +191,9 @@ def test_agent_uses_default_config_when_no_workspace_or_config_flags(mock_agent_
         mock_agent_runtime["config"].workspace_path
     )
     mock_agent_runtime["agent_loop"].process_direct.assert_awaited_once()
-    mock_agent_runtime["print_response"].assert_called_once_with("mock-response", render_markdown=True)
+    mock_agent_runtime["print_response"].assert_called_once_with(
+        "mock-response", render_markdown=True
+    )
 
 
 def test_agent_uses_explicit_config_path(mock_agent_runtime, tmp_path: Path):
@@ -218,6 +222,7 @@ def test_agent_config_sets_active_path(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr("velo.config.paths.get_cron_dir", lambda: config_file.parent / "cron")
     monkeypatch.setattr("velo.cli.commands.sync_workspace_templates", lambda _path: None)
     from unittest.mock import AsyncMock, MagicMock
+
     fake_bus = MagicMock()
     fake_bus.publish_outbound = AsyncMock()
     monkeypatch.setattr("velo.cli.commands._make_provider", lambda _config: object())
@@ -297,12 +302,12 @@ def test_gateway_uses_workspace_from_config_by_default(monkeypatch, tmp_path: Pa
     )
     monkeypatch.setattr(
         "velo.cli.commands._make_provider",
-        lambda _config: (_ for _ in ()).throw(_StopGateway("stop")),
+        lambda _config: (_ for _ in ()).throw(_StopGatewayError("stop")),
     )
 
     result = runner.invoke(app, ["gateway", "--config", str(config_file)])
 
-    assert isinstance(result.exception, _StopGateway)
+    assert isinstance(result.exception, _StopGatewayError)
     assert seen["config_path"] == config_file.resolve()
     assert seen["workspace"] == Path(config.agents.defaults.workspace)
 
@@ -325,7 +330,7 @@ def test_gateway_workspace_option_overrides_config(monkeypatch, tmp_path: Path) 
     )
     monkeypatch.setattr(
         "velo.cli.commands._make_provider",
-        lambda _config: (_ for _ in ()).throw(_StopGateway("stop")),
+        lambda _config: (_ for _ in ()).throw(_StopGatewayError("stop")),
     )
 
     result = runner.invoke(
@@ -333,7 +338,7 @@ def test_gateway_workspace_option_overrides_config(monkeypatch, tmp_path: Path) 
         ["gateway", "--config", str(config_file), "--workspace", str(override)],
     )
 
-    assert isinstance(result.exception, _StopGateway)
+    assert isinstance(result.exception, _StopGatewayError)
     assert seen["workspace"] == override
     assert config.workspace_path == override
 
@@ -358,11 +363,11 @@ def test_gateway_uses_config_directory_for_cron_store(monkeypatch, tmp_path: Pat
     class _StopCron:
         def __init__(self, store_path: Path) -> None:
             seen["cron_store"] = store_path
-            raise _StopGateway("stop")
+            raise _StopGatewayError("stop")
 
     monkeypatch.setattr("velo.cron.service.CronService", _StopCron)
 
     result = runner.invoke(app, ["gateway", "--config", str(config_file)])
 
-    assert isinstance(result.exception, _StopGateway)
+    assert isinstance(result.exception, _StopGatewayError)
     assert seen["cron_store"] == config_file.parent / "cron" / "jobs.json"

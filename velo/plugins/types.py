@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -52,6 +52,7 @@ HOOKS: dict[str, HookType] = {
 # Runtime references (late-bound, set after AgentLoop creation)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RuntimeRefs:
     """Late-bound references to runtime objects that aren't available at plugin load time.
@@ -70,6 +71,7 @@ class RuntimeRefs:
 # ---------------------------------------------------------------------------
 # Service / RuntimeAware protocols
 # ---------------------------------------------------------------------------
+
 
 @runtime_checkable
 class ServiceLike(Protocol):
@@ -90,6 +92,7 @@ class RuntimeAware(Protocol):
 # Plugin metadata
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class PluginMeta:
     """Metadata about a discovered plugin."""
@@ -104,6 +107,7 @@ class PluginMeta:
 # Registered hook entry (callback + priority)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class HookEntry:
     """A single registered hook callback with its priority."""
@@ -115,6 +119,7 @@ class HookEntry:
 # ---------------------------------------------------------------------------
 # PluginContext — the API surface plugins receive in setup()
 # ---------------------------------------------------------------------------
+
 
 class PluginContext:
     """
@@ -179,9 +184,7 @@ class PluginContext:
             ValueError: If hook_name is not a valid hook.
         """
         if hook_name not in HOOKS:
-            raise ValueError(
-                f"Unknown hook '{hook_name}'. Valid hooks: {', '.join(HOOKS)}"
-            )
+            raise ValueError(f"Unknown hook '{hook_name}'. Valid hooks: {', '.join(HOOKS)}")
         self._hooks[hook_name].append(HookEntry(callback=callback, priority=priority))
 
     # -- Internal helpers (used by PluginManager) --

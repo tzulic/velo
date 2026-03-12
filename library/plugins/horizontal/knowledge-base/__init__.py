@@ -27,11 +27,10 @@ from velo.plugins.types import PluginContext
 logger = logging.getLogger(__name__)
 
 _CREATE_META = (
-    "CREATE TABLE IF NOT EXISTS doc_meta "
-    "(path TEXT PRIMARY KEY, mtime REAL, indexed_at TEXT);"
+    "CREATE TABLE IF NOT EXISTS doc_meta (path TEXT PRIMARY KEY, mtime REAL, indexed_at TEXT);"
 )
 _CREATE_FTS = (
-    'CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5('
+    "CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5("
     'path UNINDEXED, chunk_id UNINDEXED, content, tokenize="unicode61");'
 )
 
@@ -68,19 +67,15 @@ class _KnowledgeDB:
 
     def _chunk(self, text: str) -> list[str]:
         """Split text into overlapping fixed-size chunks."""
-        return [
-            text[i : i + self._chunk_size]
-            for i in range(0, len(text), self._step)
-        ]
+        return [text[i : i + self._chunk_size] for i in range(0, len(text), self._step)]
 
     def _read_file(self, path: Path) -> str:
         """Read file content; PDF extraction requires pypdf."""
         if path.suffix.lower() == ".pdf":
             try:
                 import pypdf  # type: ignore[import-untyped]
-                return "\n".join(
-                    p.extract_text() or "" for p in pypdf.PdfReader(str(path)).pages
-                )
+
+                return "\n".join(p.extract_text() or "" for p in pypdf.PdfReader(str(path)).pages)
             except ImportError:
                 logger.info("knowledge_base.pdf_support_unavailable")
                 return ""
@@ -110,9 +105,7 @@ class _KnowledgeDB:
         mtime = path.stat().st_mtime
         conn = _connect(self._db_path)
         try:
-            row = conn.execute(
-                "SELECT mtime FROM doc_meta WHERE path = ?", (str(path),)
-            ).fetchone()
+            row = conn.execute("SELECT mtime FROM doc_meta WHERE path = ?", (str(path),)).fetchone()
         finally:
             conn.close()
         if row and abs(row[0] - mtime) < 0.01:
@@ -127,6 +120,7 @@ class _KnowledgeDB:
     def index_url(self, url: str) -> int:
         """Fetch a URL and index its text content. Returns chunk count."""
         import urllib.request
+
         with urllib.request.urlopen(url, timeout=15) as resp:  # noqa: S310
             text = resp.read().decode("utf-8", errors="replace")
         if not text.strip():

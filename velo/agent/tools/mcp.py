@@ -101,6 +101,7 @@ async def connect_mcp_servers(
                 )
                 read, write = await stack.enter_async_context(stdio_client(params))
             elif transport_type == "sse":
+
                 def httpx_client_factory(
                     headers: dict[str, str] | None = None,
                     timeout: httpx.Timeout | None = None,
@@ -146,7 +147,9 @@ async def connect_mcp_servers(
             mode = "deferred" if cfg.defer_tools else "active"
             logger.info(
                 "MCP server '{}': connected, {} tools registered ({})",
-                name, len(tools.tools), mode,
+                name,
+                len(tools.tools),
+                mode,
             )
         except Exception as e:
             logger.error("MCP server '{}': failed to connect: {}", name, e)

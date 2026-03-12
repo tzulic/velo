@@ -15,6 +15,7 @@ from velo.bus.queue import MessageBus
 @pytest.fixture
 def make_loop():
     """Factory fixture for creating a minimal AgentLoop for testing."""
+
     def _factory(**overrides: Any) -> AgentLoop:
         bus = MessageBus()
         provider = AsyncMock()
@@ -25,4 +26,5 @@ def make_loop():
             workspace=Path("/tmp/test-workspace"),
             **overrides,
         )
+
     return _factory

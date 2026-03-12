@@ -95,10 +95,12 @@ class TestCallAgentTool:
 
     def test_multiple_peers_indexed_by_name(self):
         """Multiple peers are all indexed by name."""
-        tool = CallAgentTool(peers=[
-            _make_peer("Alpha", "http://a:18791"),
-            _make_peer("Beta", "http://b:18791"),
-        ])
+        tool = CallAgentTool(
+            peers=[
+                _make_peer("Alpha", "http://a:18791"),
+                _make_peer("Beta", "http://b:18791"),
+            ]
+        )
         assert "Alpha" in tool._peers
         assert "Beta" in tool._peers
         assert tool._peers["Alpha"].url == "http://a:18791"

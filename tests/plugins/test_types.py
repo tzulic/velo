@@ -8,11 +8,12 @@ from typing import Any
 import pytest
 
 from velo.agent.tools.base import Tool
-from velo.plugins.types import HOOKS, HookEntry, PluginContext
+from velo.plugins.types import HOOKS, PluginContext
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 class _DummyTool(Tool):
     """Minimal tool for testing registration."""
@@ -40,6 +41,7 @@ def _make_ctx(tmp_path: Path) -> PluginContext:
 # ---------------------------------------------------------------------------
 # Tests: PluginContext basics
 # ---------------------------------------------------------------------------
+
 
 def test_context_stores_metadata(tmp_path: Path) -> None:
     """PluginContext should store plugin_name, config, and workspace."""
@@ -117,8 +119,12 @@ def test_register_invalid_hook_raises(tmp_path: Path) -> None:
 def test_all_hook_names_defined() -> None:
     """HOOKS dict should contain the 6 expected hooks."""
     expected = {
-        "on_startup", "on_shutdown", "after_prompt_build",
-        "before_tool_call", "after_tool_call", "before_response",
+        "on_startup",
+        "on_shutdown",
+        "after_prompt_build",
+        "before_tool_call",
+        "after_tool_call",
+        "before_response",
     }
     assert set(HOOKS.keys()) == expected
 

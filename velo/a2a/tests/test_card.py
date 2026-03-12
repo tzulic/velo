@@ -9,9 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-a2a_available = pytest.importorskip(
-    "a2a", reason="a2a-sdk not installed — skipping A2A card tests"
-)
+a2a_available = pytest.importorskip("a2a", reason="a2a-sdk not installed — skipping A2A card tests")
 
 
 def _make_a2a_config(
@@ -74,9 +72,7 @@ class TestBuildAgentCard:
     @patch("velo.a2a.card.AgentCapabilities")
     @patch("velo.a2a.card.AgentSkill")
     @patch("velo.a2a.card.SkillsLoader")
-    def test_builds_skills_from_loader(
-        self, mock_loader_cls, mock_skill, mock_caps, mock_card
-    ):
+    def test_builds_skills_from_loader(self, mock_loader_cls, mock_skill, mock_caps, mock_card):
         """Skills from SkillsLoader appear in the AgentCard."""
         from velo.a2a.card import build_agent_card
 
@@ -95,9 +91,7 @@ class TestBuildAgentCard:
     @patch("velo.a2a.card.AgentCapabilities")
     @patch("velo.a2a.card.AgentSkill")
     @patch("velo.a2a.card.SkillsLoader")
-    def test_fallback_skill_when_no_skills(
-        self, mock_loader_cls, mock_skill, mock_caps, mock_card
-    ):
+    def test_fallback_skill_when_no_skills(self, mock_loader_cls, mock_skill, mock_caps, mock_card):
         """When no skills are available, one generic skill is added."""
         from velo.a2a.card import build_agent_card
 

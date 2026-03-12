@@ -12,22 +12,25 @@ from velo.providers.context_limits import (
 class TestGetContextWindow:
     """Test get_context_window() lookup."""
 
-    @pytest.mark.parametrize("model,expected", [
-        ("anthropic/claude-opus-4-5", 200_000),
-        ("claude-sonnet-4-5", 200_000),
-        ("gpt-5-turbo", 400_000),
-        ("gpt-4o", 128_000),
-        ("gpt-4.1-mini", 1_000_000),
-        ("gemini-2.5-pro", 1_000_000),
-        ("deepseek-v3", 128_000),
-        ("qwen-3.5", 262_000),
-        ("kimi-k2.5", 1_000_000),
-        ("llama-4-scout-17b", 10_000_000),
-        ("llama-4-maverick", 1_000_000),
-        ("llama-3.1-70b", 128_000),
-        ("grok-4.1", 2_000_000),
-        ("grok-4", 256_000),
-    ])
+    @pytest.mark.parametrize(
+        "model,expected",
+        [
+            ("anthropic/claude-opus-4-5", 200_000),
+            ("claude-sonnet-4-5", 200_000),
+            ("gpt-5-turbo", 400_000),
+            ("gpt-4o", 128_000),
+            ("gpt-4.1-mini", 1_000_000),
+            ("gemini-2.5-pro", 1_000_000),
+            ("deepseek-v3", 128_000),
+            ("qwen-3.5", 262_000),
+            ("kimi-k2.5", 1_000_000),
+            ("llama-4-scout-17b", 10_000_000),
+            ("llama-4-maverick", 1_000_000),
+            ("llama-3.1-70b", 128_000),
+            ("grok-4.1", 2_000_000),
+            ("grok-4", 256_000),
+        ],
+    )
     def test_known_models(self, model: str, expected: int) -> None:
         """Known model patterns return correct context window."""
         assert get_context_window(model) == expected
@@ -59,21 +62,28 @@ class TestEstimateTokens:
 
     def test_list_content(self) -> None:
         """Handles list-style content (multimodal messages)."""
-        messages = [{"role": "user", "content": [
-            {"type": "text", "text": "Hello world"},
-        ]}]
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Hello world"},
+                ],
+            }
+        ]
         result = estimate_tokens(messages)
         assert result > 0
 
     def test_tool_calls_counted(self) -> None:
         """Tool call arguments are included in estimate."""
-        messages = [{
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [
-                {"function": {"name": "read_file", "arguments": '{"path": "/etc/hosts"}'}},
-            ],
-        }]
+        messages = [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"function": {"name": "read_file", "arguments": '{"path": "/etc/hosts"}'}},
+                ],
+            }
+        ]
         result = estimate_tokens(messages)
         assert result > 0
 
