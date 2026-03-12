@@ -1,5 +1,5 @@
 """
-Entry point for running nanobot as a module: python -m nanobot
+Entry point for running velo as a module: python -m velo
 """
 
 from velo.cli.commands import app

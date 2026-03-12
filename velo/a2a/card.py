@@ -50,7 +50,7 @@ def build_agent_card(a2a_config: "A2AConfig", workspace: Path) -> AgentCard:
         ]
 
     name = a2a_config.agent_name or socket.gethostname()
-    description = a2a_config.agent_description or "nanobot personal AI assistant"
+    description = a2a_config.agent_description or "velo personal AI assistant"
     url = f"http://0.0.0.0:{a2a_config.port}/"
 
     return AgentCard(

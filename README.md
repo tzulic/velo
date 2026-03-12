@@ -82,7 +82,7 @@ pip install velo-ai
 **Or from source** (latest features, development)
 
 ```bash
-git clone https://github.com/volosai/velo.git
+git clone https://github.com/tzulic/velo.git
 cd velo
 pip install -e .
 ```
@@ -1105,11 +1105,11 @@ Volos is building the future of AI-powered personal assistants. Velo is at the h
 
 **Get Support:**
 - [Volos Discord](https://discord.gg/volos) — Community & support
-- [GitHub Issues](https://github.com/volosai/velo/issues) — Bug reports & feature requests
+- [GitHub Issues](https://github.com/tzulic/velo/issues) — Bug reports & feature requests
 - [Volos Docs](https://docs.volos.io) — Full documentation
 
 **Contribute:**
-- PRs welcome on [GitHub](https://github.com/volosai/velo)!
+- PRs welcome on [GitHub](https://github.com/tzulic/velo)!
 - The codebase is intentionally small and readable. 🤗
 
 <p align="center">

@@ -126,7 +126,7 @@ class EmailChannel(BaseChannel):
             logger.info("Skip automatic email reply to {}: auto_reply_enabled is false", to_addr)
             return
 
-        base_subject = self._last_subject_by_chat.get(to_addr, "nanobot reply")
+        base_subject = self._last_subject_by_chat.get(to_addr, "velo reply")
         subject = self._reply_subject(base_subject)
         if msg.metadata and isinstance(msg.metadata.get("subject"), str):
             override = msg.metadata["subject"].strip()
@@ -134,7 +134,9 @@ class EmailChannel(BaseChannel):
                 subject = override
 
         email_msg = EmailMessage()
-        email_msg["From"] = self.config.from_address or self.config.smtp_username or self.config.imap_username
+        email_msg["From"] = (
+            self.config.from_address or self.config.smtp_username or self.config.imap_username
+        )
         email_msg["To"] = to_addr
         email_msg["Subject"] = subject
         email_msg.set_content(msg.content or "")
@@ -166,7 +168,7 @@ class EmailChannel(BaseChannel):
             missing.append("smtp_password")
 
         if missing:
-            logger.error("Email channel not configured, missing: {}", ', '.join(missing))
+            logger.error("Email channel not configured, missing: {}", ", ".join(missing))
             return False
         return True
 
@@ -309,7 +311,9 @@ class EmailChannel(BaseChannel):
                     # mark_seen is the primary dedup; this set is a safety net
                     if len(self._processed_uids) > self._MAX_PROCESSED_UIDS:
                         # Evict a random half to cap memory; mark_seen is the primary dedup
-                        self._processed_uids = set(list(self._processed_uids)[len(self._processed_uids) // 2:])
+                        self._processed_uids = set(
+                            list(self._processed_uids)[len(self._processed_uids) // 2 :]
+                        )
 
                 if mark_seen:
                     client.store(imap_id, "+FLAGS", "\\Seen")
@@ -330,7 +334,11 @@ class EmailChannel(BaseChannel):
     @staticmethod
     def _extract_message_bytes(fetched: list[Any]) -> bytes | None:
         for item in fetched:
-            if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
+            if (
+                isinstance(item, tuple)
+                and len(item) >= 2
+                and isinstance(item[1], (bytes, bytearray))
+            ):
                 return bytes(item[1])
         return None
 
@@ -401,7 +409,7 @@ class EmailChannel(BaseChannel):
         return html.unescape(text)
 
     def _reply_subject(self, base_subject: str) -> str:
-        subject = (base_subject or "").strip() or "nanobot reply"
+        subject = (base_subject or "").strip() or "velo reply"
         prefix = self.config.subject_prefix or "Re: "
         if subject.lower().startswith("re:"):
             return subject

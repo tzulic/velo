@@ -558,7 +558,7 @@ class AgentLoop:
             return OutboundMessage(
                 channel=msg.channel,
                 chat_id=msg.chat_id,
-                content="🐈 nanobot commands:\n/new — Start a new conversation\n/stop — Stop the current task\n/help — Show available commands",
+                content="🐈 velo commands:\n/new — Start a new conversation\n/stop — Stop the current task\n/help — Show available commands",
             )
 
         unconsolidated = len(session.messages) - session.last_consolidated
