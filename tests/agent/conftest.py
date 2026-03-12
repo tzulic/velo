@@ -20,10 +20,11 @@ def make_loop():
         bus = MessageBus()
         provider = AsyncMock()
         provider.get_default_model = lambda: "test-model"
+        workspace = overrides.pop("workspace", Path("/tmp/test-workspace"))
         return AgentLoop(
             bus=bus,
             provider=provider,
-            workspace=Path("/tmp/test-workspace"),
+            workspace=workspace,
             **overrides,
         )
 

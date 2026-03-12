@@ -358,7 +358,7 @@ def test_gateway_uses_config_directory_for_cron_store(monkeypatch, tmp_path: Pat
     monkeypatch.setattr("velo.cli.commands.sync_workspace_templates", lambda _path: None)
     monkeypatch.setattr("velo.cli.commands._make_provider", lambda _config: object())
     monkeypatch.setattr("velo.bus.queue.MessageBus", lambda: object())
-    monkeypatch.setattr("velo.session.manager.SessionManager", lambda _workspace: object())
+    monkeypatch.setattr("velo.session.manager.SessionManager", lambda _workspace, **_kw: object())
 
     class _StopCron:
         def __init__(self, store_path: Path) -> None:

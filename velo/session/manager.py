@@ -5,7 +5,7 @@ import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from loguru import logger
 
@@ -69,14 +69,28 @@ class SessionManager:
     """
     Manages conversation sessions.
 
-    Sessions are stored as JSONL files in the sessions directory.
+    Sessions are stored as JSONL files by default (backend="jsonl") or in a
+    SQLite database (backend="sqlite") for concurrent-safe, structured access.
     """
 
-    def __init__(self, workspace: Path):
+    def __init__(self, workspace: Path, backend: Literal["jsonl", "sqlite"] = "jsonl") -> None:
+        """Initialize the session manager.
+
+        Args:
+            workspace (Path): Workspace directory where sessions are stored.
+            backend (Literal["jsonl", "sqlite"]): Storage backend. Defaults to "jsonl".
+        """
         self.workspace = workspace
         self.sessions_dir = ensure_dir(self.workspace / "sessions")
         self.legacy_sessions_dir = get_legacy_sessions_dir()
         self._cache: dict[str, Session] = {}
+        self._backend = backend
+        self._sqlite: Any = None  # SQLiteSessionStore, lazily imported
+        if backend == "sqlite":
+            from velo.session.sqlite_store import SQLiteSessionStore
+
+            db_path = self.sessions_dir / "sessions.db"
+            self._sqlite = SQLiteSessionStore(db_path)
 
     def _get_session_path(self, key: str) -> Path:
         """Get the file path for a session."""
@@ -109,7 +123,21 @@ class SessionManager:
         return session
 
     def _load(self, key: str) -> Session | None:
-        """Load a session from disk."""
+        """Load a session from the configured backend."""
+        if self._sqlite is not None:
+            return self._load_sqlite(key)
+        return self._load_jsonl(key)
+
+    def _load_sqlite(self, key: str) -> Session | None:
+        """Load a session from SQLite, migrating from JSONL if needed."""
+        # Migrate JSONL → SQLite on first access.
+        jsonl_path = self._get_session_path(key)
+        if jsonl_path.exists():
+            self._sqlite.migrate_from_jsonl(jsonl_path, key)
+        return self._sqlite.load(key)
+
+    def _load_jsonl(self, key: str) -> Session | None:
+        """Load a session from a JSONL file."""
         path = self._get_session_path(key)
         if not path.exists():
             legacy_path = self._get_legacy_session_path(key)
@@ -160,7 +188,15 @@ class SessionManager:
             return None
 
     def save(self, session: Session) -> None:
-        """Save a session to disk."""
+        """Save a session to the configured backend."""
+        if self._sqlite is not None:
+            self._sqlite.save(session)
+        else:
+            self._save_jsonl(session)
+        self._cache[session.key] = session
+
+    def _save_jsonl(self, session: Session) -> None:
+        """Persist a session to a JSONL file."""
         path = self._get_session_path(session.key)
 
         with open(path, "w", encoding="utf-8") as f:
@@ -176,21 +212,21 @@ class SessionManager:
             for msg in session.messages:
                 f.write(json.dumps(msg, ensure_ascii=False) + "\n")
 
-        self._cache[session.key] = session
-
     def invalidate(self, key: str) -> None:
         """Remove a session from the in-memory cache."""
         self._cache.pop(key, None)
 
     def list_sessions(self) -> list[dict[str, Any]]:
         """
-        List all sessions.
+        List all sessions sorted by most recently updated.
 
         Returns:
-            List of session info dicts.
+            List of session info dicts with key, created_at, updated_at.
         """
-        sessions = []
+        if self._sqlite is not None:
+            return self._sqlite.list_sessions()
 
+        sessions = []
         for path in self.sessions_dir.glob("*.jsonl"):
             try:
                 # Read just the metadata line

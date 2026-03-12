@@ -223,12 +223,38 @@ def onboard():
     )
 
 
-def _make_provider(config: Config):
-    """Create the appropriate LLM provider from config."""
+def _build_fallback_provider(config: Config):
+    """Build the fallback LLM provider if fallback_model is configured.
+
+    Args:
+        config (Config): Loaded configuration.
+
+    Returns:
+        LLMProvider | None: Fallback provider, or None if not configured or build fails.
+    """
+    if not config.agents.defaults.fallback_model:
+        return None
+    try:
+        return _make_provider(config, config.agents.defaults.fallback_model)
+    except SystemExit:
+        console.print("[yellow]Warning: Could not create fallback provider, continuing without.[/yellow]")
+        return None
+
+
+def _make_provider(config: Config, model: str | None = None):
+    """Create the appropriate LLM provider from config.
+
+    Args:
+        config (Config): Loaded configuration.
+        model (str | None): Override model name; defaults to config.agents.defaults.model.
+
+    Returns:
+        LLMProvider: Configured provider instance.
+    """
     from velo.providers.azure_openai_provider import AzureOpenAIProvider
     from velo.providers.openai_codex_provider import OpenAICodexProvider
 
-    model = config.agents.defaults.model
+    model = model or config.agents.defaults.model
     provider_name = config.get_provider_name(model)
     p = config.get_provider(model)
 
@@ -381,7 +407,10 @@ def gateway(
 
     bus = MessageBus()
     provider = _make_provider(config)
-    session_manager = SessionManager(config.workspace_path)
+    session_manager = SessionManager(
+        config.workspace_path, backend=config.agents.defaults.session_backend
+    )
+    fallback_provider = _build_fallback_provider(config)
 
     # Create cron service first (callback set after agent creation)
     cron_store_path = get_cron_dir() / "jobs.json"
@@ -413,6 +442,8 @@ def gateway(
         plugin_manager=plugin_mgr,
         context_window=config.agents.defaults.context_window,
         a2a_peers=config.a2a.peers,
+        fallback_provider=fallback_provider,
+        save_trajectories=config.agents.defaults.save_trajectories,
     )
 
     # Set cron callback (needs agent)
@@ -594,6 +625,8 @@ def agent(
     bus = MessageBus()
     provider = _make_provider(config)
 
+    fallback_provider = _build_fallback_provider(config)
+
     # Create cron service for tool usage (no callback needed for CLI unless running)
     cron_store_path = get_cron_dir() / "jobs.json"
     cron = CronService(cron_store_path)
@@ -602,6 +635,20 @@ def agent(
         logger.enable("Velo")
     else:
         logger.disable("Velo")
+
+    # Wire up clarify tool for interactive TTY sessions.
+    async def _cli_clarify(question: str, choices: list[str] | None) -> str:
+        """Present a clarifying question to the CLI user and return their answer."""
+        if choices:
+            opts = "\n".join(f"  {i + 1}. {c}" for i, c in enumerate(choices))
+            prompt = f"\n❓ {question}\n{opts}\n  {len(choices) + 1}. Other\n> "
+        else:
+            prompt = f"\n❓ {question}\n> "
+        return await asyncio.to_thread(input, prompt)
+
+    # Only offer clarify on interactive TTY — headless/pipe runs skip it.
+    is_interactive_tty = sys.stdin.isatty()
+    clarify_callback = _cli_clarify if is_interactive_tty else None
 
     agent_loop = AgentLoop(
         bus=bus,
@@ -622,10 +669,14 @@ def agent(
         exec_config=config.tools.exec,
         cron_service=cron,
         restrict_to_workspace=config.tools.restrict_to_workspace,
+        session_backend=config.agents.defaults.session_backend,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
         plugin_manager=plugin_mgr,
         context_window=config.agents.defaults.context_window,
+        fallback_provider=fallback_provider,
+        save_trajectories=config.agents.defaults.save_trajectories,
+        clarify_callback=clarify_callback,
     )
 
     # Show spinner when logs are off (no output to miss); skip when logs are on

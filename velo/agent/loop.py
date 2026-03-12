@@ -5,10 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import sys
 import weakref
+from collections.abc import Awaitable
 from contextlib import AsyncExitStack
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from loguru import logger
 
@@ -34,12 +37,54 @@ from velo.bus.events import InboundMessage, OutboundMessage
 from velo.bus.queue import MessageBus
 from velo.providers.base import LLMProvider, LLMResponse
 from velo.providers.context_limits import estimate_tokens, get_context_window
+from velo.providers.errors import RETRYABLE_ERRORS
 from velo.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
     from velo.config.schema import A2APeerConfig, BrowseConfig, ChannelsConfig, ExecToolConfig
     from velo.cron.service import CronService
     from velo.plugins.manager import PluginManager
+
+
+class _SafeWriter:
+    """Wraps a stream so OSError (broken pipe, closed fd) is silently swallowed.
+
+    Installed over sys.stdout in daemon/systemd/Docker contexts to prevent
+    EPIPE from crashing the process when a downstream consumer closes the pipe.
+    """
+
+    __slots__ = ("_inner",)
+
+    def __init__(self, inner: Any) -> None:
+        object.__setattr__(self, "_inner", inner)
+
+    def write(self, data: str | bytes) -> int:
+        """Write data, discarding OSError (e.g. broken pipe)."""
+        try:
+            return self._inner.write(data)  # type: ignore[no-any-return]
+        except OSError:
+            return len(data) if isinstance(data, str) else 0
+
+    def flush(self) -> None:
+        """Flush, discarding OSError."""
+        try:
+            self._inner.flush()
+        except OSError:
+            pass
+
+    def fileno(self) -> int:
+        """Return underlying file descriptor (needed by some stdlib code)."""
+        return self._inner.fileno()  # type: ignore[no-any-return]
+
+    def isatty(self) -> bool:
+        """Return whether the underlying stream is a TTY."""
+        try:
+            return self._inner.isatty()  # type: ignore[no-any-return]
+        except OSError:
+            return False
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
 
 
 class AgentLoop:
@@ -77,11 +122,15 @@ class AgentLoop:
         cron_service: CronService | None = None,
         restrict_to_workspace: bool = False,
         session_manager: SessionManager | None = None,
+        session_backend: Literal["jsonl", "sqlite"] = "jsonl",
         mcp_servers: dict | None = None,
         channels_config: ChannelsConfig | None = None,
         plugin_manager: PluginManager | None = None,
         context_window: int | None = None,
         a2a_peers: "list[A2APeerConfig] | None" = None,
+        fallback_provider: LLMProvider | None = None,
+        save_trajectories: bool = False,
+        clarify_callback: Callable[[str, list[str] | None], Awaitable[str]] | None = None,
     ):
         from velo.config.schema import BrowseConfig, ExecToolConfig
 
@@ -111,6 +160,16 @@ class AgentLoop:
         self.restrict_to_workspace = restrict_to_workspace
         self.context_window_override = context_window
 
+        # Provider fallback: activated at most once per session when primary exhausts retries.
+        self._fallback_provider: LLMProvider | None = fallback_provider
+        self._fallback_activated: bool = False
+
+        # Trajectory saving: append JSONL turn records for debugging/fine-tuning.
+        self._save_trajectories = save_trajectories
+        self._trajectories_dir = workspace / "trajectories"
+        if save_trajectories:
+            self._trajectories_dir.mkdir(parents=True, exist_ok=True)
+
         self.plugin_manager = plugin_manager
         self.context = ContextBuilder(
             workspace,
@@ -120,7 +179,7 @@ class AgentLoop:
         )
         # Reason: track turns per session to inject periodic memory nudges.
         self._turn_counts: dict[str, int] = {}
-        self.sessions = session_manager or SessionManager(workspace)
+        self.sessions = session_manager or SessionManager(workspace, backend=session_backend)
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
             provider=provider,
@@ -149,10 +208,14 @@ class AgentLoop:
         )
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
         self._processing_lock = asyncio.Lock()
-        self._register_default_tools(a2a_peers)
+        self._register_default_tools(a2a_peers, clarify_callback)
         self._register_plugin_tools()
 
-    def _register_default_tools(self, a2a_peers: "list[A2APeerConfig] | None" = None) -> None:
+    def _register_default_tools(
+        self,
+        a2a_peers: "list[A2APeerConfig] | None" = None,
+        clarify_callback: Callable[[str, list[str] | None], Awaitable[str]] | None = None,
+    ) -> None:
         """Register the default set of tools."""
         allowed_dir = self.workspace if self.restrict_to_workspace else None
         for cls in (ReadFileTool, WriteFileTool, EditFileTool, ListDirTool):
@@ -177,6 +240,10 @@ class AgentLoop:
             from velo.agent.tools.a2a_call import CallAgentTool
 
             self.tools.register(CallAgentTool(peers=a2a_peers))
+        if clarify_callback is not None:
+            from velo.agent.tools.clarify import ClarifyTool
+
+            self.tools.register(ClarifyTool(clarify_callback))
 
     def _register_plugin_tools(self) -> None:
         """Register tools from all loaded plugins, respecting their deferred flag."""
@@ -235,6 +302,65 @@ class AgentLoop:
 
         return ", ".join(_fmt(tc) for tc in tool_calls)
 
+    def _try_activate_fallback(self) -> bool:
+        """Swap to fallback provider in-place. One-shot — returns False if already done or not configured.
+
+        Returns:
+            bool: True if fallback was activated, False if already active or not configured.
+        """
+        if self._fallback_activated or self._fallback_provider is None:
+            return False
+        logger.info(
+            "provider.fallback_activated: primary exhausted retries, switching to {}",
+            self._fallback_provider.get_default_model(),
+        )
+        self.provider = self._fallback_provider
+        self._fallback_activated = True
+        return True
+
+    def _save_trajectory(
+        self, messages: list[dict[str, Any]], session_key: str, completed: bool
+    ) -> None:
+        """Append one trajectory record to JSONL. Sync write is fine for append-only.
+
+        Args:
+            messages (list[dict]): Full message list from the turn.
+            session_key (str): Session key for identifying the source session.
+            completed (bool): True if the turn completed without error.
+        """
+        if not self._save_trajectories:
+            return
+
+        # Convert to ShareGPT format (human/gpt role pairs).
+        trajectory: list[dict[str, str]] = []
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content") or ""
+            if isinstance(content, list):
+                # Flatten multimodal content to text.
+                content = " ".join(
+                    p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"
+                )
+            if role == "user":
+                trajectory.append({"from": "human", "value": str(content)})
+            elif role == "assistant":
+                trajectory.append({"from": "gpt", "value": str(content)})
+
+        filename = "trajectory_samples.jsonl" if completed else "failed_trajectories.jsonl"
+        path = self._trajectories_dir / filename
+        record = {
+            "conversations": trajectory,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "model": self.model,
+            "session_key": session_key,
+            "completed": completed,
+        }
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception as e:
+            logger.warning("trajectory.save_failed: {}", str(e))
+
     async def _chat_with_retry(self, **kwargs: Any) -> LLMResponse:
         """Call provider.chat() with retry. Delegates to llm_helpers."""
         return await chat_with_retry(self.provider, **kwargs)
@@ -288,6 +414,15 @@ class AgentLoop:
                     **llm_kwargs,
                 )
             else:
+                response = await self._chat_with_retry(**llm_kwargs)
+
+            # Provider fallback: if primary exhausted all retries with a transient error,
+            # swap to the backup provider and retry once. One-shot — stays active for session.
+            if (
+                response.finish_reason == "error"
+                and response.error_code in RETRYABLE_ERRORS
+                and self._try_activate_fallback()
+            ):
                 response = await self._chat_with_retry(**llm_kwargs)
 
             # Reactive trim: context overflow → trim aggressively and retry once.
@@ -487,6 +622,10 @@ class AgentLoop:
         on_progress: Callable[[str], Awaitable[None]] | None = None,
     ) -> OutboundMessage | None:
         """Process a single inbound message and return the response."""
+        # Guard against broken-pipe crashes in systemd/Docker/daemon contexts.
+        if not isinstance(sys.stdout, _SafeWriter):
+            sys.stdout = _SafeWriter(sys.stdout)
+
         deferred_hint = self.tools.get_deferred_summary()
         # System messages: parse origin from chat_id ("channel:chat_id")
         if msg.channel == "system":
@@ -633,6 +772,7 @@ class AgentLoop:
 
         self._save_turn(session, all_msgs, 1 + len(history))
         self.sessions.save(session)
+        self._save_trajectory(all_msgs, session.key, completed=True)
 
         if (mt := self.tools.get("message")) and isinstance(mt, MessageTool) and mt._sent_in_turn:
             return None
@@ -648,8 +788,6 @@ class AgentLoop:
 
     def _save_turn(self, session: Session, messages: list[dict], skip: int) -> None:
         """Save new-turn messages into session, truncating large tool results."""
-        from datetime import datetime
-
         for m in messages[skip:]:
             entry = dict(m)
             role, content = entry.get("role"), entry.get("content")
