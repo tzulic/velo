@@ -52,6 +52,9 @@ class SQLiteSessionStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._path = path
         self._conn = sqlite3.connect(str(path), check_same_thread=False)
+        # Cache of already-persisted message counts per session_key to avoid
+        # a COUNT(*) query on every save() call.
+        self._persisted_counts: dict[str, int] = {}
         # WAL mode allows concurrent readers while a write is in progress.
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
@@ -99,11 +102,8 @@ class SQLiteSessionStore:
         Args:
             session (Session): Session to persist.
         """
-        # Count messages already written so we only insert new ones.
-        existing = self._conn.execute(
-            "SELECT COUNT(*) FROM messages WHERE session_key = ?",
-            (session.key,),
-        ).fetchone()[0]
+        # Use cached count to avoid a COUNT(*) query on every save.
+        existing = self._persisted_counts.get(session.key, 0)
 
         with self._conn:
             self._conn.execute(
@@ -129,6 +129,7 @@ class SQLiteSessionStore:
                     "INSERT INTO messages (session_key, idx, data) VALUES (?, ?, ?)",
                     (session.key, idx, json.dumps(msg, ensure_ascii=False)),
                 )
+        self._persisted_counts[session.key] = len(session.messages)
 
     def list_sessions(self) -> list[dict[str, Any]]:
         """Return metadata dicts for all sessions, sorted by updated_at descending.

@@ -223,6 +223,24 @@ def onboard():
     )
 
 
+def _build_fallback_provider(config: Config):
+    """Build the fallback LLM provider if fallback_model is configured.
+
+    Args:
+        config (Config): Loaded configuration.
+
+    Returns:
+        LLMProvider | None: Fallback provider, or None if not configured or build fails.
+    """
+    if not config.agents.defaults.fallback_model:
+        return None
+    try:
+        return _make_provider(config, config.agents.defaults.fallback_model)
+    except SystemExit:
+        console.print("[yellow]Warning: Could not create fallback provider, continuing without.[/yellow]")
+        return None
+
+
 def _make_provider(config: Config, model: str | None = None):
     """Create the appropriate LLM provider from config.
 
@@ -392,14 +410,7 @@ def gateway(
     session_manager = SessionManager(
         config.workspace_path, backend=config.agents.defaults.session_backend
     )
-
-    # Build fallback provider if configured.
-    fallback_provider = None
-    if config.agents.defaults.fallback_model:
-        try:
-            fallback_provider = _make_provider(config, config.agents.defaults.fallback_model)
-        except SystemExit:
-            console.print("[yellow]Warning: Could not create fallback provider, continuing without.[/yellow]")
+    fallback_provider = _build_fallback_provider(config)
 
     # Create cron service first (callback set after agent creation)
     cron_store_path = get_cron_dir() / "jobs.json"
@@ -614,13 +625,7 @@ def agent(
     bus = MessageBus()
     provider = _make_provider(config)
 
-    # Build fallback provider if configured.
-    fallback_provider = None
-    if config.agents.defaults.fallback_model:
-        try:
-            fallback_provider = _make_provider(config, config.agents.defaults.fallback_model)
-        except SystemExit:
-            console.print("[yellow]Warning: Could not create fallback provider, continuing without.[/yellow]")
+    fallback_provider = _build_fallback_provider(config)
 
     # Create cron service for tool usage (no callback needed for CLI unless running)
     cron_store_path = get_cron_dir() / "jobs.json"

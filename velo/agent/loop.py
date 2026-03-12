@@ -9,7 +9,7 @@ import sys
 import weakref
 from collections.abc import Awaitable
 from contextlib import AsyncExitStack
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
@@ -169,9 +169,6 @@ class AgentLoop:
         self._trajectories_dir = workspace / "trajectories"
         if save_trajectories:
             self._trajectories_dir.mkdir(parents=True, exist_ok=True)
-
-        # Clarify callback: injected by CLI/platform to present questions to the user.
-        self._clarify_callback = clarify_callback
 
         self.plugin_manager = plugin_manager
         self.context = ContextBuilder(
@@ -351,8 +348,6 @@ class AgentLoop:
 
         filename = "trajectory_samples.jsonl" if completed else "failed_trajectories.jsonl"
         path = self._trajectories_dir / filename
-        from datetime import timezone
-
         record = {
             "conversations": trajectory,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -793,8 +788,6 @@ class AgentLoop:
 
     def _save_turn(self, session: Session, messages: list[dict], skip: int) -> None:
         """Save new-turn messages into session, truncating large tool results."""
-        from datetime import datetime
-
         for m in messages[skip:]:
             entry = dict(m)
             role, content = entry.get("role"), entry.get("content")
