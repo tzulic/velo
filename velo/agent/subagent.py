@@ -57,7 +57,6 @@ class SubagentManager:
         self.on_complete_callback = on_complete_callback
         self._running_tasks: dict[str, asyncio.Task[None]] = {}
         self._session_tasks: dict[str, set[str]] = {}  # session_key -> {task_id, ...}
-        self._active_count_per_session: dict[str, int] = {}
 
     async def spawn(
         self,
@@ -95,7 +94,7 @@ class SubagentManager:
 
         # Concurrency guard: cap active subagents per session
         if session_key:
-            active = self._active_count_per_session.get(session_key, 0)
+            active = len(self._session_tasks.get(session_key, set()))
             if active >= self.MAX_CHILDREN_PER_SESSION:
                 logger.warning(
                     "subagent.spawn_blocked_concurrency: session={} active={}",
@@ -106,7 +105,6 @@ class SubagentManager:
                     f"Error: Subagent spawn blocked — maximum concurrent subagents "
                     f"({self.MAX_CHILDREN_PER_SESSION}) already running for this session."
                 )
-            self._active_count_per_session[session_key] = active + 1
 
         task_id = str(uuid.uuid4())[:8]
         display_label = label or task[:30] + ("..." if len(task) > 30 else "")
@@ -126,12 +124,6 @@ class SubagentManager:
                     ids.discard(task_id)
                     if not ids:
                         del self._session_tasks[session_key]
-                # Decrement active count
-                cnt = self._active_count_per_session.get(session_key, 1)
-                if cnt <= 1:
-                    self._active_count_per_session.pop(session_key, None)
-                else:
-                    self._active_count_per_session[session_key] = cnt - 1
 
         bg_task.add_done_callback(_cleanup)
 

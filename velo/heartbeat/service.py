@@ -97,6 +97,24 @@ class HeartbeatService:
         self.quiet_start = quiet_start
         self.quiet_end = quiet_end
         self.quiet_timezone = quiet_timezone
+        # Pre-parse quiet hours config to avoid repeated string parsing on every tick
+        self._quiet_tz: ZoneInfo | None = None
+        self._quiet_start_minutes: int | None = None
+        self._quiet_end_minutes: int | None = None
+        if quiet_start and quiet_end:
+            try:
+                self._quiet_tz = ZoneInfo(quiet_timezone)
+                sh, sm = (int(x) for x in quiet_start.split(":"))
+                eh, em = (int(x) for x in quiet_end.split(":"))
+                self._quiet_start_minutes = sh * 60 + sm
+                self._quiet_end_minutes = eh * 60 + em
+            except (ZoneInfoNotFoundError, ValueError, AttributeError):
+                logger.warning(
+                    "heartbeat.quiet_hours_invalid: start={} end={} tz={}",
+                    quiet_start,
+                    quiet_end,
+                    quiet_timezone,
+                )
         self._running = False
         self._task: asyncio.Task | None = None
         # Event queue for immediate wake (event-driven heartbeat)
@@ -171,37 +189,18 @@ class HeartbeatService:
         Returns:
             bool: True if notifications should be suppressed.
         """
-        if not self.quiet_start or not self.quiet_end:
+        if self._quiet_tz is None or self._quiet_start_minutes is None or self._quiet_end_minutes is None:
             return False
-        try:
-            tz = ZoneInfo(self.quiet_timezone)
-        except ZoneInfoNotFoundError:
-            logger.warning("heartbeat.quiet_hours_invalid_tz: {}", self.quiet_timezone)
-            return False
-
-        now = datetime.now(tz)
+        now = datetime.now(self._quiet_tz)
         now_minutes = now.hour * 60 + now.minute
-
-        try:
-            start_h, start_m = (int(x) for x in self.quiet_start.split(":"))
-            end_h, end_m = (int(x) for x in self.quiet_end.split(":"))
-        except (ValueError, AttributeError):
-            logger.warning(
-                "heartbeat.quiet_hours_invalid_format: start={} end={}",
-                self.quiet_start,
-                self.quiet_end,
-            )
-            return False
-
-        start_minutes = start_h * 60 + start_m
-        end_minutes = end_h * 60 + end_m
-
-        if start_minutes <= end_minutes:
+        start = self._quiet_start_minutes
+        end = self._quiet_end_minutes
+        if start <= end:
             # Same-day window: e.g. 09:00–17:00
-            return start_minutes <= now_minutes < end_minutes
+            return start <= now_minutes < end
         else:
             # Midnight wrap: e.g. 23:00–07:00
-            return now_minutes >= start_minutes or now_minutes < end_minutes
+            return now_minutes >= start or now_minutes < end
 
     def _is_duplicate(self, text: str) -> bool:
         """Check if a heartbeat response is identical to the last one within 24h.

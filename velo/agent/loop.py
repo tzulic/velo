@@ -10,6 +10,7 @@ import sys
 import time
 import uuid
 import weakref
+from collections import deque
 from collections.abc import Awaitable
 from contextlib import AsyncExitStack
 from datetime import datetime, timezone
@@ -104,7 +105,7 @@ class RateLimiter:
             max_per_minute (int): Maximum messages allowed per session per 60s window.
         """
         self._max = max_per_minute
-        self._windows: dict[str, list[float]] = {}
+        self._windows: dict[str, deque[float]] = {}
 
     def is_allowed(self, key: str) -> bool:
         """Check whether a message from ``key`` is within rate limits.
@@ -119,11 +120,19 @@ class RateLimiter:
             bool: True if the message should be sent, False if rate-limited.
         """
         now = time.monotonic()
-        window = self._windows.setdefault(key, [])
-        # Evict entries older than 60 seconds
-        cutoff = now - 60.0
-        while window and window[0] < cutoff:
-            window.pop(0)
+        window = self._windows.get(key)
+        if window is not None:
+            # Evict entries older than 60 seconds
+            cutoff = now - 60.0
+            while window and window[0] < cutoff:
+                window.popleft()
+            # Remove empty windows so terminated sessions don't accumulate
+            if not window:
+                del self._windows[key]
+                window = None
+        if window is None:
+            window = deque()
+            self._windows[key] = window
         if len(window) >= self._max:
             return False
         window.append(now)

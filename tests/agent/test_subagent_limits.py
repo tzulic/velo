@@ -50,7 +50,8 @@ async def test_concurrency_limit_blocks_excess(manager):
     """Spawning more than MAX_CHILDREN_PER_SESSION returns error string."""
     session = "test:session"
     manager.MAX_CHILDREN_PER_SESSION = 2  # type: ignore[assignment]
-    manager._active_count_per_session[session] = 2  # Simulate 2 already running
+    # Simulate 2 already running by populating _session_tasks directly
+    manager._session_tasks[session] = {"task1", "task2"}
 
     result = await manager.spawn("extra task", session_key=session)
     assert "blocked" in result.lower() or "Error" in result
@@ -58,18 +59,18 @@ async def test_concurrency_limit_blocks_excess(manager):
 
 @pytest.mark.asyncio
 async def test_active_count_incremented_on_spawn(manager):
-    """Successful spawn increments the per-session active count."""
+    """Successful spawn adds task to per-session tracking."""
     session = "test:sess2"
     await manager.spawn("task1", session_key=session)
-    assert manager._active_count_per_session.get(session, 0) >= 1
+    assert len(manager._session_tasks.get(session, set())) >= 1
 
 
 @pytest.mark.asyncio
 async def test_active_count_decremented_after_completion(manager):
-    """Active count returns to 0 after the task completes."""
+    """Session task set is empty after the task completes."""
     session = "test:sess3"
     await manager.spawn("quick task", session_key=session)
     # Allow the background task to run
     await asyncio.sleep(0.1)
-    # After completion the count should be 0 (cleaned up)
-    assert manager._active_count_per_session.get(session, 0) == 0
+    # After completion the entry should be cleaned up
+    assert len(manager._session_tasks.get(session, set())) == 0

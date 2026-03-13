@@ -8,7 +8,9 @@ users) are moved to a failed/ subdirectory without further retries.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -89,9 +91,6 @@ class DeliveryQueue:
         Returns:
             int: Number of messages successfully delivered.
         """
-        import asyncio
-        import time
-
         deadline = time.monotonic() + budget_s
         delivered = 0
         now = datetime.now(timezone.utc)

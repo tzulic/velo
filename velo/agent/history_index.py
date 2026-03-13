@@ -133,10 +133,10 @@ class HistoryIndex:
 
         conn = self._connect()
         try:
-            self._init_schema(conn)
+            self._init_schema(conn)  # sets self._fts5_available
             cur = conn.cursor()
             rows = [(e["content"], e.get("date")) for e in entries]
-            if self._check_fts5(conn):
+            if self._fts5_available:
                 cur.execute("DELETE FROM history_fts")
                 cur.executemany("INSERT INTO history_fts(content, created_at) VALUES (?, ?)", rows)
             else:
