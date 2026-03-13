@@ -6,15 +6,43 @@ from typing import Any
 
 from velo.agent.tools.base import Tool
 
+# Directories that must never be accessed via agent tools.
+# Paths are resolved at module load time so that macOS symlinks
+# (e.g. /etc → /private/etc) are handled correctly in the check below.
+_DENYLIST: frozenset[Path] = frozenset(
+    Path(d).resolve()
+    for d in ["/etc", "/proc", "/sys", "/dev", "/root", "/boot", "/run"]
+)
+
 
 def _resolve_path(
     path: str, workspace: Path | None = None, allowed_dir: Path | None = None
 ) -> Path:
-    """Resolve path against workspace (if relative) and enforce directory restriction."""
+    """Resolve path against workspace (if relative) and enforce directory restriction.
+
+    Raises PermissionError if the resolved path falls inside a system denylist
+    directory or outside the allowed_dir (when set).
+
+    Args:
+        path (str): Raw path string from the agent.
+        workspace (Path | None): Base directory for relative paths.
+        allowed_dir (Path | None): If set, paths must be inside this directory.
+
+    Returns:
+        Path: Resolved, safe absolute path.
+
+    Raises:
+        PermissionError: If the path is restricted.
+    """
     p = Path(path).expanduser()
     if not p.is_absolute() and workspace:
         p = workspace / p
     resolved = p.resolve()
+
+    # Denylist: block known sensitive system directories
+    if any(resolved == d or resolved.is_relative_to(d) for d in _DENYLIST):
+        raise PermissionError(f"Path {path} is in a restricted system directory")
+
     if allowed_dir:
         try:
             resolved.relative_to(allowed_dir.resolve())

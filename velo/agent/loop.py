@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import signal
 import sys
+import time
+import uuid
 import weakref
 from collections.abc import Awaitable
 from contextlib import AsyncExitStack
@@ -16,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal
 from loguru import logger
 
 from velo.agent.context import ContextBuilder
+from velo.agent.provider_health import get_provider_health
 from velo.agent.llm_helpers import (
     PROACTIVE_TRIM_TARGET,
     PROACTIVE_TRIM_THRESHOLD,
@@ -85,6 +89,45 @@ class _SafeWriter:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
+
+
+class RateLimiter:
+    """Fixed-window per-key rate limiter for outbound messages.
+
+    Tracks send times per session key using a sliding window of 60 seconds.
+    """
+
+    def __init__(self, max_per_minute: int = 10) -> None:
+        """Initialize rate limiter.
+
+        Args:
+            max_per_minute (int): Maximum messages allowed per session per 60s window.
+        """
+        self._max = max_per_minute
+        self._windows: dict[str, list[float]] = {}
+
+    def is_allowed(self, key: str) -> bool:
+        """Check whether a message from ``key`` is within rate limits.
+
+        Slides the window to evict entries older than 60s, then checks if the
+        count is below the cap.  Records the current time on approval.
+
+        Args:
+            key (str): Session key to check.
+
+        Returns:
+            bool: True if the message should be sent, False if rate-limited.
+        """
+        now = time.monotonic()
+        window = self._windows.setdefault(key, [])
+        # Evict entries older than 60 seconds
+        cutoff = now - 60.0
+        while window and window[0] < cutoff:
+            window.pop(0)
+        if len(window) >= self._max:
+            return False
+        window.append(now)
+        return True
 
 
 class AgentLoop:
@@ -197,6 +240,7 @@ class AgentLoop:
         )
 
         self._running = False
+        self._shutting_down: bool = False
         self._mcp_servers = mcp_servers or {}
         self._mcp_stack: AsyncExitStack | None = None
         self._mcp_connected = False
@@ -207,7 +251,12 @@ class AgentLoop:
             weakref.WeakValueDictionary()
         )
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
-        self._processing_lock = asyncio.Lock()
+        # Per-session serialization: replaces global _processing_lock so sessions
+        # run concurrently while messages within the same session queue behind each other.
+        self._session_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
+            weakref.WeakValueDictionary()
+        )
+        self._rate_limiter = RateLimiter()
         self._register_default_tools(a2a_peers, clarify_callback)
         self._register_plugin_tools()
 
@@ -379,13 +428,50 @@ class AgentLoop:
         self,
         initial_messages: list[dict],
         on_progress: Callable[..., Awaitable[None]] | None = None,
+        session_key: str = "",
     ) -> tuple[str | None, list[str], list[dict]]:
-        """Run the agent iteration loop. Returns (final_content, tools_used, messages)."""
+        """Run the agent iteration loop. Returns (final_content, tools_used, messages).
+
+        Args:
+            initial_messages (list[dict]): Pre-built message list including system + history.
+            on_progress (Callable | None): Optional streaming progress callback.
+            session_key (str): Session key for usage logging.
+
+        Returns:
+            tuple[str | None, list[str], list[dict]]: final content, tools used, all messages.
+        """
+        run_id = str(uuid.uuid4())[:8]
+        start_ms = int(time.monotonic() * 1000)
+        _provider_id = f"{self.provider.__class__.__name__}:{self.model}"
+
+        with logger.contextualize(run_id=run_id):
+            return await self._run_agent_loop_inner(
+                initial_messages,
+                on_progress=on_progress,
+                session_key=session_key,
+                run_id=run_id,
+                start_ms=start_ms,
+                provider_id=_provider_id,
+            )
+
+    async def _run_agent_loop_inner(
+        self,
+        initial_messages: list[dict],
+        on_progress: Callable[..., Awaitable[None]] | None,
+        session_key: str,
+        run_id: str,
+        start_ms: int,
+        provider_id: str,
+    ) -> tuple[str | None, list[str], list[dict]]:
+        """Inner loop body, called within a logger.contextualize block."""
         messages = initial_messages
         iteration = 0
         final_content = None
         tools_used: list[str] = []
         ctx_window = get_context_window(self.model, self.context_window_override)
+        health = get_provider_health(provider_id)
+        total_tokens_in = 0
+        total_tokens_out = 0
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -407,6 +493,21 @@ class AgentLoop:
                 "reasoning_effort": self.reasoning_effort,
             }
 
+            # Provider health: if primary is in cooldown, probe or skip to fallback
+            if not health.is_available():
+                if health.should_probe():
+                    health.mark_probed()
+                    logger.info("provider.probing: cooldown expiring soon, sending probe")
+                    # Fall through to attempt normally (this IS the probe)
+                elif self._try_activate_fallback():
+                    logger.info(
+                        "provider.cooldown_fallback: {:.0f}s remaining on primary",
+                        health.seconds_until_available(),
+                    )
+                    health = get_provider_health(
+                        f"{self.provider.__class__.__name__}:{self.model}"
+                    )
+
             # Use streaming when a progress callback is available.
             if on_progress:
                 response = await self._chat_stream_to_response(
@@ -415,6 +516,17 @@ class AgentLoop:
                 )
             else:
                 response = await self._chat_with_retry(**llm_kwargs)
+
+            # Record provider health based on response
+            if response.finish_reason == "error" and response.error_code in RETRYABLE_ERRORS:
+                health.record_failure(response.error_code or "unknown")
+            elif response.finish_reason != "error":
+                health.record_success()
+
+            # Accumulate token usage for cost tracking
+            if response.usage:
+                total_tokens_in += response.usage.get("input_tokens", 0)
+                total_tokens_out += response.usage.get("output_tokens", 0)
 
             # Provider fallback: if primary exhausted all retries with a transient error,
             # swap to the backup provider and retry once. One-shot — stays active for session.
@@ -520,13 +632,49 @@ class AgentLoop:
                 chat_id="",
             )
 
+        # Record usage metrics
+        if total_tokens_in > 0 or total_tokens_out > 0:
+            duration_ms = int(time.monotonic() * 1000) - start_ms
+            try:
+                from velo.metrics.usage import record_usage
+
+                record_usage(
+                    workspace=self.workspace,
+                    run_id=run_id,
+                    session_key=session_key,
+                    model=self.model,
+                    tokens_in=total_tokens_in,
+                    tokens_out=total_tokens_out,
+                    duration_ms=duration_ms,
+                    tool_calls_count=len(tools_used),
+                )
+            except Exception as e:
+                logger.warning("usage.record_error: {}", e)
+
         return final_content, tools_used, messages
+
+    def _request_shutdown(self) -> None:
+        """Set shutdown flag — called from signal handlers."""
+        if not self._shutting_down:
+            logger.info("agent.shutdown_started")
+        self._shutting_down = True
+        self._running = False
 
     async def run(self) -> None:
         """Run the agent loop, dispatching messages as tasks to stay responsive to /stop."""
         self._running = True
+        self._shutting_down = False
         await self._connect_mcp()
         logger.info("Agent loop started")
+
+        # Register graceful shutdown handlers (main thread only; silently skip otherwise)
+        try:
+            loop = asyncio.get_event_loop()
+            loop.add_signal_handler(signal.SIGTERM, self._request_shutdown)
+            loop.add_signal_handler(signal.SIGINT, self._request_shutdown)
+        except (NotImplementedError, ValueError):
+            # Windows or non-main-thread: fall back to no-op
+            pass
 
         while self._running:
             try:
@@ -546,6 +694,21 @@ class AgentLoop:
                         else None
                     )
                 )
+
+            # After dispatching, check shutdown flag and drain active tasks
+            if self._shutting_down:
+                break
+
+        # Drain active tasks on graceful shutdown
+        if self._shutting_down:
+            all_tasks = [t for tasks in self._active_tasks.values() for t in tasks if not t.done()]
+            if all_tasks:
+                logger.info("agent.shutdown_draining: waiting for {} task(s)", len(all_tasks))
+                try:
+                    await asyncio.wait_for(asyncio.gather(*all_tasks, return_exceptions=True), timeout=60.0)
+                except asyncio.TimeoutError:
+                    logger.warning("agent.shutdown_timeout: forcing stop after 60s drain")
+            logger.info("agent.shutdown_completed")
 
     async def _handle_stop(self, msg: InboundMessage) -> None:
         """Cancel all active tasks and subagents for the session."""
@@ -568,11 +731,19 @@ class AgentLoop:
         )
 
     async def _dispatch(self, msg: InboundMessage) -> None:
-        """Process a message under the global lock."""
-        async with self._processing_lock:
+        """Process a message under the per-session lock.
+
+        Sessions run concurrently; messages within the same session are serialized.
+        """
+        # Per-session lock: setdefault is atomic in CPython's event loop (single-threaded)
+        lock = self._session_locks.setdefault(msg.session_key, asyncio.Lock())
+        async with lock:
             try:
                 response = await self._process_message(msg)
                 if response is not None:
+                    # Rate limiting for outbound messages
+                    if not self._rate_limiter.is_allowed(msg.session_key):
+                        logger.warning("message.rate_limited: session={}", msg.session_key)
                     await self.bus.publish_outbound(response)
                 elif msg.channel == "cli":
                     await self.bus.publish_outbound(
@@ -583,11 +754,17 @@ class AgentLoop:
                             metadata=msg.metadata or {},
                         )
                     )
+            except MemoryError:
+                logger.critical("agent.fatal_memory_error — exiting")
+                sys.exit(1)
+            except (ConnectionError, TimeoutError, asyncio.TimeoutError):
+                logger.warning("agent.transient_network_error: session={}", msg.session_key)
+                # Transient — do not crash, let the next message proceed
             except asyncio.CancelledError:
                 logger.info("Task cancelled for session {}", msg.session_key)
                 raise
             except Exception:
-                logger.exception("Error processing message for session {}", msg.session_key)
+                logger.exception("agent.unhandled_error: session={}", msg.session_key)
                 await self.bus.publish_outbound(
                     OutboundMessage(
                         channel=msg.channel,
@@ -644,7 +821,7 @@ class AgentLoop:
                 chat_id=chat_id,
                 deferred_tools_hint=deferred_hint,
             )
-            final_content, _, all_msgs = await self._run_agent_loop(messages)
+            final_content, _, all_msgs = await self._run_agent_loop(messages, session_key=key)
             self._save_turn(session, all_msgs, 1 + len(history))
             self.sessions.save(session)
             return OutboundMessage(
@@ -765,6 +942,7 @@ class AgentLoop:
         final_content, _, all_msgs = await self._run_agent_loop(
             initial_messages,
             on_progress=on_progress or _bus_progress,
+            session_key=key,
         )
 
         if final_content is None:

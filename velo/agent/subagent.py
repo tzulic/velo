@@ -4,7 +4,7 @@ import asyncio
 import json
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from loguru import logger
 
@@ -22,6 +22,9 @@ from velo.providers.base import LLMProvider
 class SubagentManager:
     """Manages background subagent execution."""
 
+    MAX_SPAWN_DEPTH: int = 1  # Subagents cannot spawn other subagents
+    MAX_CHILDREN_PER_SESSION: int = 5  # Max concurrent subagents per session
+
     def __init__(
         self,
         provider: LLMProvider,
@@ -36,6 +39,7 @@ class SubagentManager:
         browse_config: "BrowseConfig | None" = None,
         exec_config: "ExecToolConfig | None" = None,
         restrict_to_workspace: bool = False,
+        on_complete_callback: Callable[[dict[str, Any]], None] | None = None,
     ):
         self.provider = provider
         self.workspace = workspace
@@ -49,8 +53,11 @@ class SubagentManager:
         self._browse_config = browse_config or BrowseConfig()
         self.exec_config = exec_config or ExecToolConfig()
         self.restrict_to_workspace = restrict_to_workspace
+        # Optional callback invoked when a subagent completes (for event-driven heartbeat).
+        self.on_complete_callback = on_complete_callback
         self._running_tasks: dict[str, asyncio.Task[None]] = {}
         self._session_tasks: dict[str, set[str]] = {}  # session_key -> {task_id, ...}
+        self._active_count_per_session: dict[str, int] = {}
 
     async def spawn(
         self,
@@ -59,27 +66,78 @@ class SubagentManager:
         origin_channel: str = "cli",
         origin_chat_id: str = "direct",
         session_key: str | None = None,
+        depth: int = 0,
+        parent_run_id: str | None = None,
     ) -> str:
-        """Spawn a subagent to execute a task in the background."""
+        """Spawn a subagent to execute a task in the background.
+
+        Args:
+            task (str): Task description for the subagent.
+            label (str | None): Short display label.
+            origin_channel (str): Channel to report results to.
+            origin_chat_id (str): Chat ID to report results to.
+            session_key (str | None): Session key for concurrency tracking.
+            depth (int): Spawn depth — 0 = top-level, 1+ = nested (blocked).
+            parent_run_id (str | None): Run ID of the spawning agent loop.
+
+        Returns:
+            str: Confirmation message or error string if limits exceeded.
+        """
+        # Depth guard: subagents cannot spawn subagents
+        if depth >= self.MAX_SPAWN_DEPTH:
+            logger.warning(
+                "subagent.spawn_blocked_depth: depth={} parent_run_id={}", depth, parent_run_id
+            )
+            return (
+                f"Error: Subagent spawn blocked — maximum spawn depth "
+                f"({self.MAX_SPAWN_DEPTH}) reached."
+            )
+
+        # Concurrency guard: cap active subagents per session
+        if session_key:
+            active = self._active_count_per_session.get(session_key, 0)
+            if active >= self.MAX_CHILDREN_PER_SESSION:
+                logger.warning(
+                    "subagent.spawn_blocked_concurrency: session={} active={}",
+                    session_key,
+                    active,
+                )
+                return (
+                    f"Error: Subagent spawn blocked — maximum concurrent subagents "
+                    f"({self.MAX_CHILDREN_PER_SESSION}) already running for this session."
+                )
+            self._active_count_per_session[session_key] = active + 1
+
         task_id = str(uuid.uuid4())[:8]
         display_label = label or task[:30] + ("..." if len(task) > 30 else "")
         origin = {"channel": origin_channel, "chat_id": origin_chat_id}
 
-        bg_task = asyncio.create_task(self._run_subagent(task_id, task, display_label, origin))
+        bg_task = asyncio.create_task(
+            self._run_subagent(task_id, task, display_label, origin, parent_run_id=parent_run_id)
+        )
         self._running_tasks[task_id] = bg_task
         if session_key:
             self._session_tasks.setdefault(session_key, set()).add(task_id)
 
         def _cleanup(_: asyncio.Task) -> None:
             self._running_tasks.pop(task_id, None)
-            if session_key and (ids := self._session_tasks.get(session_key)):
-                ids.discard(task_id)
-                if not ids:
-                    del self._session_tasks[session_key]
+            if session_key:
+                if (ids := self._session_tasks.get(session_key)):
+                    ids.discard(task_id)
+                    if not ids:
+                        del self._session_tasks[session_key]
+                # Decrement active count
+                cnt = self._active_count_per_session.get(session_key, 1)
+                if cnt <= 1:
+                    self._active_count_per_session.pop(session_key, None)
+                else:
+                    self._active_count_per_session[session_key] = cnt - 1
 
         bg_task.add_done_callback(_cleanup)
 
-        logger.info("Spawned subagent [{}]: {}", task_id, display_label)
+        logger.info(
+            "subagent.spawned: id={} label={} parent_run_id={}", task_id, display_label, parent_run_id
+        )
         return f"Subagent [{display_label}] started (id: {task_id}). I'll notify you when it completes."
 
     async def _run_subagent(
@@ -88,9 +146,18 @@ class SubagentManager:
         task: str,
         label: str,
         origin: dict[str, str],
+        parent_run_id: str | None = None,
     ) -> None:
-        """Execute the subagent task and announce the result."""
-        logger.info("Subagent [{}] starting task: {}", task_id, label)
+        """Execute the subagent task and announce the result.
+
+        Args:
+            task_id (str): Unique task identifier.
+            task (str): Full task description.
+            label (str): Short display label.
+            origin (dict): Channel and chat_id for result reporting.
+            parent_run_id (str | None): Run ID of the parent agent loop for tracing.
+        """
+        run_id = str(uuid.uuid4())[:8]
 
         # Scoped browser session for this subagent run (created before try for cleanup)
         browser_session = BrowserSession(
@@ -99,105 +166,121 @@ class SubagentManager:
             timeout=self._browse_config.timeout,
         )
 
-        try:
-            # Build subagent tools (no message tool, no spawn tool)
-            tools = ToolRegistry()
-            allowed_dir = self.workspace if self.restrict_to_workspace else None
-            tools.register(ReadFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
-            tools.register(WriteFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
-            tools.register(EditFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
-            tools.register(ListDirTool(workspace=self.workspace, allowed_dir=allowed_dir))
-            tools.register(
-                ExecTool(
-                    working_dir=str(self.workspace),
-                    timeout=self.exec_config.timeout,
-                    restrict_to_workspace=self.restrict_to_workspace,
-                    path_append=self.exec_config.path_append,
+        with logger.contextualize(run_id=run_id, parent_run_id=parent_run_id or "none"):
+            logger.info("subagent.started: id={} label={}", task_id, label)
+
+            try:
+                # Build subagent tools (no message tool, no spawn tool)
+                tools = ToolRegistry()
+                allowed_dir = self.workspace if self.restrict_to_workspace else None
+                tools.register(ReadFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
+                tools.register(WriteFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
+                tools.register(EditFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
+                tools.register(ListDirTool(workspace=self.workspace, allowed_dir=allowed_dir))
+                tools.register(
+                    ExecTool(
+                        working_dir=str(self.workspace),
+                        timeout=self.exec_config.timeout,
+                        restrict_to_workspace=self.restrict_to_workspace,
+                        path_append=self.exec_config.path_append,
+                    )
                 )
-            )
-            tools.register(WebSearchTool(api_key=self.parallel_api_key))
-            tools.register(WebFetchTool(api_key=self.parallel_api_key))
-            tools.register(WebBrowseTool(session=browser_session))
+                tools.register(WebSearchTool(api_key=self.parallel_api_key))
+                tools.register(WebFetchTool(api_key=self.parallel_api_key))
+                tools.register(WebBrowseTool(session=browser_session))
 
-            system_prompt = self._build_subagent_prompt()
-            messages: list[dict[str, Any]] = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": task},
-            ]
+                system_prompt = self._build_subagent_prompt()
+                messages: list[dict[str, Any]] = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": task},
+                ]
 
-            # Run agent loop (limited iterations)
-            max_iterations = 15
-            iteration = 0
-            final_result: str | None = None
+                # Run agent loop (limited iterations)
+                max_iterations = 15
+                iteration = 0
+                final_result: str | None = None
 
-            while iteration < max_iterations:
-                iteration += 1
+                while iteration < max_iterations:
+                    iteration += 1
 
-                response = await self.provider.chat(
-                    messages=messages,
-                    tools=tools.get_definitions(),
-                    model=self.model,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                    reasoning_effort=self.reasoning_effort,
-                )
-
-                if response.has_tool_calls:
-                    # Add assistant message with tool calls
-                    tool_call_dicts = [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.name,
-                                "arguments": json.dumps(tc.arguments, ensure_ascii=False),
-                            },
-                        }
-                        for tc in response.tool_calls
-                    ]
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "content": response.content or "",
-                            "tool_calls": tool_call_dicts,
-                        }
+                    response = await self.provider.chat(
+                        messages=messages,
+                        tools=tools.get_definitions(),
+                        model=self.model,
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens,
+                        reasoning_effort=self.reasoning_effort,
                     )
 
-                    # Execute tools
-                    for tool_call in response.tool_calls:
-                        args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
-                        logger.debug(
-                            "Subagent [{}] executing: {} with arguments: {}",
-                            task_id,
-                            tool_call.name,
-                            args_str,
-                        )
-                        result = await tools.execute(tool_call.name, tool_call.arguments)
+                    if response.has_tool_calls:
+                        # Add assistant message with tool calls
+                        tool_call_dicts = [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": json.dumps(tc.arguments, ensure_ascii=False),
+                                },
+                            }
+                            for tc in response.tool_calls
+                        ]
                         messages.append(
                             {
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "name": tool_call.name,
-                                "content": result,
+                                "role": "assistant",
+                                "content": response.content or "",
+                                "tool_calls": tool_call_dicts,
                             }
                         )
-                else:
-                    final_result = response.content
-                    break
 
-            if final_result is None:
-                final_result = "Task completed but no final response was generated."
+                        # Execute tools
+                        for tool_call in response.tool_calls:
+                            args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
+                            logger.debug(
+                                "subagent.tool_call: id={} tool={} args={}",
+                                task_id,
+                                tool_call.name,
+                                args_str[:200],
+                            )
+                            result = await tools.execute(tool_call.name, tool_call.arguments)
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": tool_call.name,
+                                    "content": result,
+                                }
+                            )
+                    else:
+                        final_result = response.content
+                        break
 
-            logger.info("Subagent [{}] completed successfully", task_id)
-            await self._announce_result(task_id, label, task, final_result, origin, "ok")
+                if final_result is None:
+                    final_result = "Task completed but no final response was generated."
 
-        except Exception as e:
-            error_msg = f"Error: {str(e)}"
-            logger.error("Subagent [{}] failed: {}", task_id, e)
-            await self._announce_result(task_id, label, task, error_msg, origin, "error")
-        finally:
-            # Always cleanup subagent browser session
-            await browser_session.close()
+                logger.info("subagent.completed: id={}", task_id)
+                await self._announce_result(task_id, label, task, final_result, origin, "ok")
+
+                # Notify heartbeat service of subagent completion (event-driven wake)
+                if self.on_complete_callback is not None:
+                    try:
+                        self.on_complete_callback(
+                            {
+                                "type": "subagent_complete",
+                                "run_id": task_id,
+                                "summary": (final_result or "")[:200],
+                            }
+                        )
+                    except Exception:
+                        pass  # Never let callback failures kill the subagent
+
+            except Exception as e:
+                error_msg = f"Error: {str(e)}"
+                logger.error("subagent.failed: id={} error={}", task_id, e)
+                await self._announce_result(task_id, label, task, error_msg, origin, "error")
+            finally:
+                # Always cleanup subagent browser session
+                await browser_session.close()
 
     async def _announce_result(
         self,

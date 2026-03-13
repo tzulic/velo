@@ -8,6 +8,13 @@ from typing import Any
 
 from velo.agent.tools.base import Tool
 
+# Directories that must never be used as working_dir for shell commands.
+# Resolved at module load for correct symlink handling on macOS (e.g. /etc → /private/etc).
+_WORKING_DIR_DENYLIST: frozenset[Path] = frozenset(
+    Path(d).resolve()
+    for d in ["/etc", "/proc", "/sys", "/dev", "/root", "/boot", "/run"]
+)
+
 
 class ExecTool(Tool):
     """Tool to execute shell commands."""
@@ -120,6 +127,17 @@ class ExecTool(Tool):
         """Best-effort safety guard for potentially destructive commands."""
         cmd = command.strip()
         lower = cmd.lower()
+
+        # Denylist: block commands run from sensitive system directories
+        try:
+            cwd_resolved = Path(cwd).resolve()
+            if any(
+                cwd_resolved == d or cwd_resolved.is_relative_to(d)
+                for d in _WORKING_DIR_DENYLIST
+            ):
+                return "Error: Command blocked by safety guard (restricted working directory)"
+        except Exception:
+            pass
 
         for pattern in self.deny_patterns:
             if re.search(pattern, lower):

@@ -31,6 +31,9 @@ class Session:
     updated_at: datetime = field(default_factory=datetime.now)
     metadata: dict[str, Any] = field(default_factory=dict)
     last_consolidated: int = 0  # Number of messages already consolidated to files
+    # Heartbeat deduplication: track last delivered heartbeat text and time
+    last_heartbeat_text: str | None = None
+    last_heartbeat_at: datetime | None = None
 
     def add_message(self, role: str, content: str, **kwargs: Any) -> None:
         """Add a message to the session."""
@@ -152,18 +155,24 @@ class SessionManager:
             return None
 
         try:
-            messages = []
-            metadata = {}
+            messages: list[dict[str, Any]] = []
+            metadata: dict[str, Any] = {}
             created_at = None
             last_consolidated = 0
+            last_heartbeat_text: str | None = None
+            last_heartbeat_at: datetime | None = None
+            dropped = 0
 
             with open(path, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
                         continue
-
-                    data = json.loads(line)
+                    try:
+                        data = json.loads(line)
+                    except json.JSONDecodeError:
+                        dropped += 1
+                        continue
 
                     if data.get("_type") == "metadata":
                         metadata = data.get("metadata", {})
@@ -173,16 +182,31 @@ class SessionManager:
                             else None
                         )
                         last_consolidated = data.get("last_consolidated", 0)
+                        last_heartbeat_text = data.get("last_heartbeat_text")
+                        _lha = data.get("last_heartbeat_at")
+                        last_heartbeat_at = datetime.fromisoformat(_lha) if _lha else None
                     else:
                         messages.append(data)
 
-            return Session(
+            session = Session(
                 key=key,
                 messages=messages,
                 created_at=created_at or datetime.now(),
                 metadata=metadata,
                 last_consolidated=last_consolidated,
+                last_heartbeat_text=last_heartbeat_text,
+                last_heartbeat_at=last_heartbeat_at,
             )
+
+            # Repair: if corrupt lines were found, back up and rewrite clean data
+            if dropped > 0:
+                logger.warning(
+                    "session.repair: dropped {} corrupt lines from {}", dropped, key
+                )
+                shutil.copy2(path, path.with_suffix(".bak"))
+                self._save_jsonl(session)
+
+            return session
         except Exception as e:
             logger.warning("Failed to load session {}: {}", key, e)
             return None
@@ -200,7 +224,7 @@ class SessionManager:
         path = self._get_session_path(session.key)
 
         with open(path, "w", encoding="utf-8") as f:
-            metadata_line = {
+            metadata_line: dict[str, Any] = {
                 "_type": "metadata",
                 "key": session.key,
                 "created_at": session.created_at.isoformat(),
@@ -208,6 +232,10 @@ class SessionManager:
                 "metadata": session.metadata,
                 "last_consolidated": session.last_consolidated,
             }
+            if session.last_heartbeat_text is not None:
+                metadata_line["last_heartbeat_text"] = session.last_heartbeat_text
+            if session.last_heartbeat_at is not None:
+                metadata_line["last_heartbeat_at"] = session.last_heartbeat_at.isoformat()
             f.write(json.dumps(metadata_line, ensure_ascii=False) + "\n")
             for msg in session.messages:
                 f.write(json.dumps(msg, ensure_ascii=False) + "\n")
