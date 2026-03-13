@@ -12,6 +12,7 @@ from loguru import logger
 
 if TYPE_CHECKING:
     from velo.providers.base import LLMProvider
+    from velo.session.manager import SessionManager
 
 _HEARTBEAT_TOOL = [
     {
@@ -72,6 +73,7 @@ class HeartbeatService:
         quiet_start: str | None = None,
         quiet_end: str | None = None,
         quiet_timezone: str = "UTC",
+        session_manager: "SessionManager | None" = None,
     ):
         """Initialize the heartbeat service.
 
@@ -86,6 +88,8 @@ class HeartbeatService:
             quiet_start (str | None): Quiet hours start "HH:MM" (e.g. "23:00").
             quiet_end (str | None): Quiet hours end "HH:MM" (e.g. "07:00").
             quiet_timezone (str): IANA timezone name for quiet hours (default "UTC").
+            session_manager (SessionManager | None): If provided, dedup state is persisted
+                to the "heartbeat" session so it survives process restarts.
         """
         self.workspace = workspace
         self.provider = provider
@@ -115,11 +119,12 @@ class HeartbeatService:
                     quiet_end,
                     quiet_timezone,
                 )
+        self._session_manager = session_manager
         self._running = False
         self._task: asyncio.Task | None = None
         # Event queue for immediate wake (event-driven heartbeat)
         self._event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        # In-memory deduplication state
+        # In-memory deduplication state (seeded from persisted session on start)
         self._last_heartbeat_text: str | None = None
         self._last_heartbeat_at: datetime | None = None
 
@@ -221,11 +226,22 @@ class HeartbeatService:
     def _record_delivery(self, text: str) -> None:
         """Record that a heartbeat was delivered.
 
+        Updates in-memory state and persists to the session store so dedup
+        survives process restarts.
+
         Args:
             text (str): The delivered response text.
         """
         self._last_heartbeat_text = text
         self._last_heartbeat_at = datetime.now(timezone.utc)
+        if self._session_manager is not None:
+            try:
+                session = self._session_manager.get_or_create("heartbeat")
+                session.last_heartbeat_text = text
+                session.last_heartbeat_at = self._last_heartbeat_at
+                self._session_manager.save(session)
+            except Exception as e:
+                logger.warning("heartbeat.dedup_persist_failed: {}", e)
 
     async def start(self) -> None:
         """Start the heartbeat service."""
@@ -235,6 +251,18 @@ class HeartbeatService:
         if self._running:
             logger.warning("Heartbeat already running")
             return
+
+        # Seed in-memory dedup state from persisted session so restarts don't
+        # re-deliver the same response that was already sent before the restart.
+        if self._session_manager is not None:
+            session = self._session_manager.get_or_create("heartbeat")
+            self._last_heartbeat_text = session.last_heartbeat_text
+            self._last_heartbeat_at = session.last_heartbeat_at
+            if self._last_heartbeat_text:
+                logger.debug(
+                    "heartbeat.dedup_loaded: last_at={}",
+                    self._last_heartbeat_at,
+                )
 
         self._running = True
         self._task = asyncio.create_task(self._run_loop())

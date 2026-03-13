@@ -8,6 +8,7 @@ import pytest
 
 from velo.heartbeat.service import HeartbeatService
 from velo.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+from velo.session.manager import SessionManager
 
 
 class _RunProvider(LLMProvider):
@@ -246,3 +247,71 @@ async def test_push_event_wakes_immediately(tmp_path):
     service.stop()
 
     assert len(notify_calls) >= 1
+
+
+# ── Session persistence ────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_dedup_state_persisted_to_session(tmp_path):
+    """After delivery, last_heartbeat_text/at should be saved to the heartbeat session."""
+    (tmp_path / "HEARTBEAT.md").write_text("- [ ] task", encoding="utf-8")
+    sm = SessionManager(tmp_path)
+
+    async def on_execute(_: str) -> str:
+        return "persistent response"
+
+    async def on_notify(_: str) -> None:
+        pass
+
+    service = HeartbeatService(
+        workspace=tmp_path,
+        provider=_RunProvider(),
+        model="test",
+        on_execute=on_execute,
+        on_notify=on_notify,
+        session_manager=sm,
+    )
+    await service._tick()
+
+    session = sm.get_or_create("heartbeat")
+    assert session.last_heartbeat_text == "persistent response"
+    assert session.last_heartbeat_at is not None
+
+
+@pytest.mark.asyncio
+async def test_dedup_state_loaded_on_start(tmp_path):
+    """On start(), dedup state is seeded from the persisted heartbeat session."""
+    sm = SessionManager(tmp_path)
+
+    # Pre-populate the session with a prior delivery
+    prior_text = "prior response"
+    prior_at = datetime.now(timezone.utc)
+    session = sm.get_or_create("heartbeat")
+    session.last_heartbeat_text = prior_text
+    session.last_heartbeat_at = prior_at
+    sm.save(session)
+
+    notify_calls: list[str] = []
+
+    async def on_execute(_: str) -> str:
+        return prior_text  # Same response as what was persisted
+
+    async def on_notify(r: str) -> None:
+        notify_calls.append(r)
+
+    (tmp_path / "HEARTBEAT.md").write_text("- [ ] task", encoding="utf-8")
+    service = HeartbeatService(
+        workspace=tmp_path,
+        provider=_RunProvider(),
+        model="test",
+        on_execute=on_execute,
+        on_notify=on_notify,
+        session_manager=sm,
+    )
+    await service.start()
+    # Dedup state should be loaded — prior_text within 24h should be suppressed
+    await service._tick()
+    service.stop()
+
+    assert len(notify_calls) == 0, "Should suppress delivery of already-sent response after restart"

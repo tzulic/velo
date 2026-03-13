@@ -76,6 +76,7 @@ class HeartbeatPlugin:
             on_notify=on_notify,
             interval_s=self.interval_s,
             enabled=self.enabled,
+            session_manager=refs.session_manager,
         )
 
     async def start(self) -> None:

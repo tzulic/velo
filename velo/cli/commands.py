@@ -363,6 +363,7 @@ async def _activate_plugins(
             bus=bus,
             process_direct=agent_loop.process_direct,
             publish_outbound=bus.publish_outbound,
+            session_manager=agent_loop.sessions,
         )
     )
     agent_loop._register_plugin_tools()
@@ -545,6 +546,7 @@ def gateway(
         on_notify=on_heartbeat_notify,
         interval_s=hb_cfg.interval_s,
         enabled=hb_cfg.enabled,
+        session_manager=session_manager,
     )
 
     if channels.enabled_channels:

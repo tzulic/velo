@@ -232,6 +232,7 @@ def test_agent_config_sets_active_path(monkeypatch, tmp_path: Path) -> None:
     class _FakeAgentLoop:
         def __init__(self, *args, **kwargs) -> None:
             self.model = "test-model"
+            self.sessions = None  # satisfies _activate_plugins session_manager wiring
 
         def _register_plugin_tools(self) -> None:
             pass

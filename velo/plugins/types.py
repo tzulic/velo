@@ -21,6 +21,7 @@ from velo.agent.tools.base import Tool
 if TYPE_CHECKING:
     from velo.bus.queue import MessageBus
     from velo.providers.base import LLMProvider
+    from velo.session.manager import SessionManager
 
 # ---------------------------------------------------------------------------
 # Type aliases
@@ -66,6 +67,7 @@ class RuntimeRefs:
     bus: MessageBus
     process_direct: Callable[..., Awaitable[str]] | None = None
     publish_outbound: Callable[..., Awaitable[None]] | None = None
+    session_manager: "SessionManager | None" = None
 
 
 # ---------------------------------------------------------------------------
