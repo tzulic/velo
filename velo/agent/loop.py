@@ -616,6 +616,7 @@ class AgentLoop:
                 # poison the context and cause permanent 400 loops (#1303).
                 if response.finish_reason == "error":
                     if response.error_code == "budget_exceeded":
+                        logger.info("budget_exceeded for session {}", session_key)
                         final_content = (
                             "I've reached the monthly usage limit for your account. "
                             "You can purchase a credit pack at volos.app/billing to continue."

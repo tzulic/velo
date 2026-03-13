@@ -1,33 +1,8 @@
 """Tests for Phase 2 Stream B: Velo model routing and budget errors."""
 
-from pathlib import Path
-from typing import Any
-from unittest.mock import AsyncMock
-
 import pytest
 
-from velo.agent.loop import AgentLoop
-from velo.bus.queue import MessageBus
 from velo.providers.errors import RETRYABLE_ERRORS, classify_error
-
-
-@pytest.fixture
-def make_loop():
-    """Factory fixture for creating a minimal AgentLoop for testing."""
-
-    def _factory(**overrides: Any) -> AgentLoop:
-        bus = MessageBus()
-        provider = AsyncMock()
-        provider.get_default_model = lambda: "test-model"
-        workspace = overrides.pop("workspace", Path("/tmp/test-workspace"))
-        return AgentLoop(
-            bus=bus,
-            provider=provider,
-            workspace=workspace,
-            **overrides,
-        )
-
-    return _factory
 
 
 class TestBudgetExceededClassification:
