@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Any, Callable, Literal
 from loguru import logger
 
 from velo.agent.context import ContextBuilder
-from velo.agent.provider_health import get_provider_health
 from velo.agent.llm_helpers import (
     PROACTIVE_TRIM_TARGET,
     PROACTIVE_TRIM_THRESHOLD,
@@ -28,6 +27,7 @@ from velo.agent.llm_helpers import (
     chat_with_retry,
     trim_to_budget,
 )
+from velo.agent.provider_health import get_provider_health
 from velo.agent.subagent import SubagentManager
 from velo.agent.tools.browse import BrowserSession, WebBrowseTool
 from velo.agent.tools.cron import CronTool
@@ -181,6 +181,7 @@ class AgentLoop:
         context_window: int | None = None,
         a2a_peers: "list[A2APeerConfig] | None" = None,
         fallback_provider: LLMProvider | None = None,
+        subagent_model: str | None = None,
         save_trajectories: bool = False,
         clarify_callback: Callable[[str, list[str] | None], Awaitable[str]] | None = None,
     ):
@@ -211,6 +212,7 @@ class AgentLoop:
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
         self.context_window_override = context_window
+        self.subagent_model = subagent_model
 
         # Provider fallback: activated at most once per session when primary exhausts retries.
         self._fallback_provider: LLMProvider | None = fallback_provider
@@ -237,7 +239,7 @@ class AgentLoop:
             provider=provider,
             workspace=workspace,
             bus=bus,
-            model=self.model,
+            model=self.subagent_model or self.model,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             reasoning_effort=reasoning_effort,
@@ -613,6 +615,12 @@ class AgentLoop:
                 # Don't persist error responses to session history — they can
                 # poison the context and cause permanent 400 loops (#1303).
                 if response.finish_reason == "error":
+                    if response.error_code == "budget_exceeded":
+                        final_content = (
+                            "I've reached the monthly usage limit for your account. "
+                            "You can purchase a credit pack at volos.app/billing to continue."
+                        )
+                        break
                     logger.error("LLM returned error: {}", (clean or "")[:200])
                     final_content = clean or "Sorry, I encountered an error calling the AI model."
                     break

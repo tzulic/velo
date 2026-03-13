@@ -444,6 +444,7 @@ def gateway(
         context_window=config.agents.defaults.context_window,
         a2a_peers=config.a2a.peers,
         fallback_provider=fallback_provider,
+        subagent_model=config.agents.defaults.subagent_model,
         save_trajectories=config.agents.defaults.save_trajectories,
     )
 
@@ -677,6 +678,7 @@ def agent(
         plugin_manager=plugin_mgr,
         context_window=config.agents.defaults.context_window,
         fallback_provider=fallback_provider,
+        subagent_model=config.agents.defaults.subagent_model,
         save_trajectories=config.agents.defaults.save_trajectories,
         clarify_callback=clarify_callback,
     )

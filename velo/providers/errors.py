@@ -11,12 +11,17 @@ def classify_error(error_msg: str) -> str:
         error_msg: The raw error message from the LLM provider.
 
     Returns:
-        str: One of "rate_limit", "timeout", "context_overflow",
-             "server_error", "auth_error", "bad_request", or "unknown".
+        str: One of "budget_exceeded", "rate_limit", "timeout",
+             "context_overflow", "server_error", "auth_error",
+             "bad_request", or "unknown".
     """
     msg = error_msg.lower()
 
     # Order matters: check specific patterns first.
+    # Reason: Budget errors must be caught before rate_limit — "quota" could
+    # match either, but "budget_exceeded" is a distinct non-retryable condition.
+    if any(k in msg for k in ("budget_exceeded", "monthly budget")):
+        return "budget_exceeded"
     if any(k in msg for k in ("rate limit", "429", "too many requests", "quota")):
         return "rate_limit"
     if any(

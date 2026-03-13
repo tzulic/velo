@@ -233,6 +233,7 @@ class AgentDefaults(Base):
     memory_nudge_interval: int = 20  # Turns between memory nudge reminders
     reasoning_effort: str | None = None  # low / medium / high — enables LLM thinking mode
     context_window: int | None = None  # Override auto-detected context window (tokens)
+    subagent_model: str | None = None  # Cheaper model for subagents; defaults to main model
     fallback_model: str | None = None  # Backup model if primary exhausts retries (e.g. "openrouter/anthropic/claude-3-5-haiku")
     save_trajectories: bool = False  # Append JSONL turn records to workspace/trajectories/ for debugging
     session_backend: Literal["jsonl", "sqlite"] = "jsonl"  # Session persistence backend
