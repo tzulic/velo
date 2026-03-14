@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from velo.agent.tools.base import Tool
+
+if TYPE_CHECKING:
+    from composio import Composio
 
 
 class ComposioToolWrapper(Tool):
@@ -27,7 +30,7 @@ class ComposioToolWrapper(Tool):
 
     def __init__(
         self,
-        composio_client: Any,
+        composio_client: Composio,
         user_id: str,
         slug: str,
         description: str,

@@ -164,6 +164,24 @@ class TestComposioPluginSetup:
         assert len(tools) == 1
         assert tools[0][0].name == "composio_slack_send_message"
 
+    @patch.dict("os.environ", {"COMPOSIO_API_KEY": "sk-test", "COMPOSIO_USER_ID": "u1"})
+    @patch("velo.plugins.builtin.composio.Composio")
+    def test_setup_skips_nameless_tools(self, mock_composio_cls) -> None:
+        """Tools with no name are skipped with a warning, not registered as 'unknown'."""
+        nameless_tool = {"type": "function", "function": {"description": "no name here"}}
+        valid_tool = SAMPLE_TOOLS[0]
+
+        mock_composio_cls.return_value = _mock_composio(tools=[nameless_tool, valid_tool])
+
+        from velo.plugins.builtin.composio import setup
+
+        ctx = PluginContext("composio", {}, Path("/tmp"))
+        setup(ctx)
+
+        tools = ctx._collect_tools()
+        assert len(tools) == 1
+        assert tools[0][0].name == "composio_gmail_send_email"
+
 
 # ---------------------------------------------------------------------------
 # Wrapper property tests

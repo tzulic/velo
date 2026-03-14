@@ -13,7 +13,7 @@ call counting.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -28,6 +28,40 @@ except ImportError:
 
 if TYPE_CHECKING:
     from velo.plugins.types import PluginContext
+
+
+_DEFAULT_PARAMS: dict[str, Any] = {"type": "object", "properties": {}}
+
+
+def _parse_tool_def(tool_def: Any) -> tuple[str, str, dict[str, Any]] | None:
+    """Extract (slug, description, parameters) from a Composio tool definition.
+
+    Handles OpenAI-wrapped dicts, unwrapped dicts, and raw Tool objects.
+    Returns None (with a warning) if the tool has no usable name.
+
+    Args:
+        tool_def: A single tool definition from ``session.tools()``.
+
+    Returns:
+        (slug, description, parameters) tuple, or None if unparseable.
+    """
+    if isinstance(tool_def, dict):
+        # OpenAI-wrapped: {"type": "function", "function": {...}} or unwrapped
+        func = tool_def.get("function", tool_def)
+        slug = func.get("name")
+        desc = func.get("description", slug or "")
+        params = func.get("parameters", _DEFAULT_PARAMS)
+    else:
+        # Raw Composio Tool objects with .slug / .description / .input_parameters
+        slug = getattr(tool_def, "slug", None) or getattr(tool_def, "name", None)
+        desc = getattr(tool_def, "description", slug or "")
+        params = getattr(tool_def, "input_parameters", _DEFAULT_PARAMS)
+
+    if not slug:
+        logger.warning("composio_plugin.setup: tool_def has no name, skipping: {}", tool_def)
+        return None
+
+    return slug, desc, params
 
 
 def setup(ctx: PluginContext) -> None:
@@ -58,23 +92,12 @@ def setup(ctx: PluginContext) -> None:
         logger.warning("composio_plugin.setup: failed to load tools: {}", exc)
         return
 
+    registered = 0
     for tool_def in tools:
-        # session.tools() returns OpenAI-format dicts by default.
-        # Handle both wrapped {"type": "function", "function": {...}} and
-        # unwrapped {"name": ..., "description": ..., "parameters": {...}} formats.
-        func = tool_def.get("function", tool_def) if isinstance(tool_def, dict) else None
-
-        if func is None:
-            # Fallback: raw Composio Tool objects with .slug / .description / .input_parameters
-            slug = getattr(tool_def, "slug", None) or getattr(tool_def, "name", "unknown")
-            desc = getattr(tool_def, "description", slug)
-            params = getattr(
-                tool_def, "input_parameters", {"type": "object", "properties": {}}
-            )
-        else:
-            slug = func.get("name", "unknown")
-            desc = func.get("description", slug)
-            params = func.get("parameters", {"type": "object", "properties": {}})
+        parsed = _parse_tool_def(tool_def)
+        if parsed is None:
+            continue
+        slug, desc, params = parsed
 
         wrapper = ComposioToolWrapper(
             composio_client=composio,
@@ -84,5 +107,6 @@ def setup(ctx: PluginContext) -> None:
             input_parameters=params,
         )
         ctx.register_tool(wrapper, deferred=True)
+        registered += 1
 
-    logger.info("composio_plugin.setup: registered {} tools (deferred)", len(tools))
+    logger.info("composio_plugin.setup: registered {} tools (deferred)", registered)
