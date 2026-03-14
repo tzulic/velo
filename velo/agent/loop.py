@@ -41,6 +41,7 @@ from velo.agent.tools.shell import ExecTool
 from velo.agent.tools.spawn import SpawnTool
 from velo.agent.tools.web import WebFetchTool, WebSearchTool
 from velo.bus.events import InboundMessage, OutboundMessage
+# Honcho integration (lazy import of adapter/tools in __init__)
 from velo.bus.queue import MessageBus
 from velo.providers.base import LLMProvider, LLMResponse
 from velo.providers.context_limits import estimate_tokens, get_context_window
@@ -48,6 +49,7 @@ from velo.providers.errors import RETRYABLE_ERRORS
 from velo.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
+    from velo.agent.honcho.config import HonchoConfig
     from velo.config.schema import A2APeerConfig, BrowseConfig, ChannelsConfig, ExecToolConfig
     from velo.cron.service import CronService
     from velo.plugins.manager import PluginManager
@@ -186,6 +188,7 @@ class AgentLoop:
         subagent_model: str | None = None,
         save_trajectories: bool = False,
         clarify_callback: Callable[[str, list[str] | None], Awaitable[str]] | None = None,
+        honcho_config: "HonchoConfig | None" = None,
     ):
         from velo.config.schema import BrowseConfig, ExecToolConfig
 
@@ -272,6 +275,18 @@ class AgentLoop:
         self._rate_limiter = RateLimiter()
         self._register_default_tools(a2a_peers, clarify_callback)
         self._register_plugin_tools()
+
+        # Honcho user-modeling integration
+        self._honcho: Any = None
+        if honcho_config and honcho_config.enabled and honcho_config.api_key:
+            from velo.agent.honcho.adapter import HonchoAdapter
+            from velo.agent.honcho.tools import HonchoNoteTool, HonchoQueryTool, HonchoSearchTool
+
+            self._honcho = HonchoAdapter(honcho_config)
+            self.context.set_honcho(self._honcho)
+            self.tools.register(HonchoSearchTool(self._honcho))
+            self.tools.register(HonchoQueryTool(self._honcho))
+            self.tools.register(HonchoNoteTool(self._honcho))
 
     def _register_default_tools(
         self,
@@ -828,6 +843,9 @@ class AgentLoop:
         """Async cleanup for all resources that need await."""
         await self.browser_session.close()
         await self.close_mcp()
+        if self._honcho:
+            await self._honcho.flush_all()
+            await self._honcho.shutdown()
 
     def stop(self) -> None:
         """Stop the agent loop."""
@@ -981,6 +999,10 @@ class AgentLoop:
                 )
             )
 
+        # Set active session for Honcho tools before the agent loop
+        if self._honcho:
+            self._honcho.set_current_session(key)
+
         final_content, _, all_msgs = await self._run_agent_loop(
             initial_messages,
             on_progress=on_progress or _bus_progress,
@@ -993,6 +1015,15 @@ class AgentLoop:
         self._save_turn(session, all_msgs, 1 + len(history))
         self.sessions.save(session)
         self._save_trajectory(all_msgs, session.key, completed=True)
+
+        # Sync messages to Honcho and prefetch context for next turn (non-blocking)
+        if self._honcho:
+            self._honcho.track_task(
+                key, asyncio.create_task(self._honcho.sync_messages(key, session.messages))
+            )
+            self._honcho.track_task(
+                key, asyncio.create_task(self._honcho.prefetch_context(key))
+            )
 
         if (mt := self.tools.get("message")) and isinstance(mt, MessageTool) and mt._sent_in_turn:
             return None
@@ -1051,7 +1082,7 @@ class AgentLoop:
             session.messages.append(entry)
         session.updated_at = datetime.now()
 
-    async def _consolidate_memory(self, session, archive_all: bool = False) -> bool:
+    async def _consolidate_memory(self, session: Any, archive_all: bool = False) -> bool:
         """Delegate to MemoryStore.consolidate(). Returns True on success."""
         return await self.context.memory.consolidate(
             session,
@@ -1061,6 +1092,7 @@ class AgentLoop:
             memory_window=self.memory_window,
             memory_limit=self.memory_char_limit,
             user_limit=self.user_char_limit,
+            honcho_active=bool(self._honcho),
         )
 
     async def process_direct(

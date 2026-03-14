@@ -249,6 +249,7 @@ class MemoryStore:
         memory_window: int = 50,
         memory_limit: int = 8000,
         user_limit: int = 4000,
+        honcho_active: bool = False,
     ) -> bool:
         """Consolidate old messages into MEMORY.md + HISTORY.md via LLM tool call.
 
@@ -260,6 +261,7 @@ class MemoryStore:
             memory_window: Number of recent messages to keep unconsolidated.
             memory_limit: Soft char limit for MEMORY.md (injected into prompt).
             user_limit: Soft char limit for USER.md (injected into prompt).
+            honcho_active: If True, skip user_update (managed by Honcho).
 
         Returns:
             True on success (including no-op), False on failure.
@@ -323,7 +325,7 @@ class MemoryStore:
 ## TWO MEMORY TARGETS
 - memory_update: agent notes — env facts, project context, tool quirks, conventions
 - user_update: user profile — who they are, preferences, timezone, communication style
-{compress_hint}
+{("⚠️ user_update is managed externally by Honcho — return it unchanged." if honcho_active else "")}{compress_hint}
 
 ## Conversation to Process
 {chr(10).join(lines)}"""
@@ -377,12 +379,15 @@ class MemoryStore:
                     if not self.write_long_term(update):
                         return False
 
-            if user_update := args.get("user_update"):
-                if not isinstance(user_update, str):
-                    user_update = json.dumps(user_update, ensure_ascii=False)
-                if user_update != current_user:
-                    if not self.write_user_profile(user_update):
-                        return False
+            # Reason: When Honcho is active, it manages user modeling externally.
+            # Skip writing USER.md to avoid conflicts with Honcho's peer cards.
+            if not honcho_active:
+                if user_update := args.get("user_update"):
+                    if not isinstance(user_update, str):
+                        user_update = json.dumps(user_update, ensure_ascii=False)
+                    if user_update != current_user:
+                        if not self.write_user_profile(user_update):
+                            return False
 
             session.last_consolidated = 0 if archive_all else len(session.messages) - keep_count
             logger.info(

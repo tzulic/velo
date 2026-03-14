@@ -52,6 +52,7 @@ dependencies = [
     "composio>=0.11.0",
     "a2a-sdk[http-server]>=0.3.0,<0.4.0",
     "uvicorn>=0.30.0,<1.0.0",
+    "honcho-ai>=2.0.1",
 ]
 
 [project.optional-dependencies]

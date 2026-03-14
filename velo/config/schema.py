@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from pydantic_settings import BaseSettings
 
+from velo.agent.honcho.config import HonchoConfig
+
 
 class Base(BaseModel):
     """Base model that accepts both camelCase and snake_case keys."""
@@ -395,6 +397,7 @@ class Config(BaseSettings):
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     plugins: dict[str, Any] = Field(default_factory=dict)
     a2a: A2AConfig = Field(default_factory=A2AConfig)
+    honcho: HonchoConfig = Field(default_factory=HonchoConfig)
 
     @property
     def workspace_path(self) -> Path:
