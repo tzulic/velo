@@ -201,6 +201,23 @@ class QQConfig(Base):
     )  # Allowed user openids (empty = public access)
 
 
+class DashboardConfig(Base):
+    """Dashboard channel configuration (Supabase Realtime)."""
+
+    enabled: bool = False
+    supabase_url: str = ""  # e.g. "https://xyz.supabase.co"
+    supabase_key: str = ""  # Service role key (long-lived, server-side)
+    room_id: str = ""  # Room identifier (becomes Realtime channel topic)
+    agent_id: str = ""  # This agent's unique ID
+    agent_name: str = ""  # This agent's display name
+    participants: list[str] = Field(
+        default_factory=list
+    )  # All agent names in room (including self)
+    allow_from: list[str] = Field(default_factory=lambda: ["*"])
+    max_agent_turns: int = 10  # Max consecutive agent-to-agent turns without user message
+    agent_cooldown_s: float = 2.0  # Seconds to wait between agent-to-agent responses
+
+
 class ChannelsConfig(Base):
     """Configuration for chat channels."""
 
@@ -216,6 +233,7 @@ class ChannelsConfig(Base):
     slack: SlackConfig = Field(default_factory=SlackConfig)
     qq: QQConfig = Field(default_factory=QQConfig)
     matrix: MatrixConfig = Field(default_factory=MatrixConfig)
+    dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
 
 
 class AgentDefaults(Base):

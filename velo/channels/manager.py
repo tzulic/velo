@@ -147,6 +147,19 @@ class ChannelManager:
             except ImportError as e:
                 logger.warning("Matrix channel not available: {}", e)
 
+        # Dashboard channel
+        if self.config.channels.dashboard.enabled:
+            try:
+                from velo.channels.dashboard import DashboardChannel
+
+                self.channels["dashboard"] = DashboardChannel(
+                    self.config.channels.dashboard,
+                    self.bus,
+                )
+                logger.info("Dashboard channel enabled")
+            except ImportError as e:
+                logger.warning("Dashboard channel not available: {}", e)
+
         self._validate_allow_from()
 
     def _validate_allow_from(self) -> None:
