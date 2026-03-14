@@ -10,7 +10,13 @@ import httpx
 import json_repair
 from loguru import logger
 
-from velo.providers.base import LLMProvider, LLMResponse, StreamChunk, ToolCallRequest
+from velo.providers.base import (
+    LLMProvider,
+    LLMResponse,
+    StreamChunk,
+    ToolCallRequest,
+    strip_model_prefix,
+)
 
 # Stop-reason → finish_reason mapping.
 _STOP_REASON_MAP = {
@@ -224,9 +230,7 @@ class AnthropicProvider(LLMProvider):
     @staticmethod
     def _strip_prefix(model: str) -> str:
         """Strip provider prefix from model name (e.g. 'anthropic/claude-...' → 'claude-...')."""
-        if model.startswith("anthropic/"):
-            return model[len("anthropic/"):]
-        return model
+        return strip_model_prefix(model, "anthropic/")
 
     def _build_kwargs(
         self,
@@ -562,6 +566,8 @@ def _handle_error(exc: Exception) -> LLMResponse:
         RateLimitError,
     )
 
+    from velo.providers.errors import classify_error
+
     error_msg = str(exc)
     code = "unknown"
 
@@ -576,6 +582,10 @@ def _handle_error(exc: Exception) -> LLMResponse:
         code = "server_error"
     elif isinstance(exc, APITimeoutError):
         code = "timeout"
+    else:
+        # Fallback to string-based classification for codes not covered by
+        # isinstance checks (e.g. budget_exceeded).
+        code = classify_error(error_msg)
 
     logger.warning("anthropic.request_failed: {}", error_msg[:200])
     return LLMResponse(

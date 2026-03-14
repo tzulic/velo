@@ -9,7 +9,13 @@ from typing import Any
 
 from loguru import logger
 
-from velo.providers.base import LLMProvider, LLMResponse, StreamChunk, ToolCallRequest
+from velo.providers.base import (
+    LLMProvider,
+    LLMResponse,
+    StreamChunk,
+    ToolCallRequest,
+    strip_model_prefix,
+)
 
 # Finish-reason mapping from Gemini to our standard.
 _FINISH_REASON_MAP = {
@@ -182,9 +188,7 @@ class GeminiProvider(LLMProvider):
     @staticmethod
     def _strip_prefix(model: str) -> str:
         """Strip 'gemini/' prefix from model name."""
-        if model.startswith("gemini/"):
-            return model[len("gemini/"):]
-        return model
+        return strip_model_prefix(model, "gemini/")
 
     # ------------------------------------------------------------------
     # Request building

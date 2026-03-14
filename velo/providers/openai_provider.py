@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
-import string
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -11,9 +9,14 @@ import json_repair
 from loguru import logger
 from openai import AsyncOpenAI
 
-from velo.providers.base import LLMProvider, LLMResponse, StreamChunk, ToolCallRequest
-
-_ALNUM = string.ascii_letters + string.digits
+from velo.providers.base import (
+    LLMProvider,
+    LLMResponse,
+    StreamChunk,
+    ToolCallRequest,
+    short_tool_id,
+    strip_model_prefix,
+)
 
 # Standard chat-completion message keys (OpenAI format).
 _ALLOWED_MSG_KEYS = frozenset(
@@ -44,11 +47,6 @@ _BACKEND_DEFAULTS: dict[str, tuple[str | None, dict[str, str]]] = {
 _MODEL_OVERRIDES: tuple[tuple[str, dict[str, Any]], ...] = (
     ("kimi-k2.5", {"temperature": 1.0}),
 )
-
-
-def _short_tool_id() -> str:
-    """Generate a 9-char alphanumeric ID compatible with all providers."""
-    return "".join(secrets.choice(_ALNUM) for _ in range(9))
 
 
 class OpenAIProvider(LLMProvider):
@@ -88,14 +86,7 @@ class OpenAIProvider(LLMProvider):
 
     def _strip_prefix(self, model: str) -> str:
         """Strip known provider prefixes from model name."""
-        prefixes = (
-            f"{self._backend}/",
-            "openai/",
-        )
-        for prefix in prefixes:
-            if model.startswith(prefix):
-                return model[len(prefix):]
-        return model
+        return strip_model_prefix(model, f"{self._backend}/", "openai/")
 
     @staticmethod
     def _extract_reasoning(message: Any) -> str | None:
@@ -214,12 +205,20 @@ class OpenAIProvider(LLMProvider):
 
         accumulated_tool_calls: dict[int, dict[str, str]] = {}
         reasoning_parts: list[str] = []
+        final_usage: dict[str, int] = {}
+        final_finish: str | None = None
 
         async for chunk in response:
+            # Capture usage from any chunk (OpenAI sends it on a separate
+            # usage-only chunk after the finish chunk).
+            if hasattr(chunk, "usage") and chunk.usage:
+                final_usage = {
+                    "prompt_tokens": getattr(chunk.usage, "prompt_tokens", 0) or 0,
+                    "completion_tokens": getattr(chunk.usage, "completion_tokens", 0) or 0,
+                    "total_tokens": getattr(chunk.usage, "total_tokens", 0) or 0,
+                }
+
             if not chunk.choices:
-                # Final chunk may contain only usage.
-                if hasattr(chunk, "usage") and chunk.usage:
-                    continue
                 continue
 
             delta = chunk.choices[0].delta
@@ -245,34 +244,27 @@ class OpenAIProvider(LLMProvider):
                     if tc_delta.function and tc_delta.function.arguments:
                         accumulated_tool_calls[idx]["arguments"] += tc_delta.function.arguments
 
-            # Final chunk.
             if finish:
-                final_tool_calls = None
-                if accumulated_tool_calls:
-                    final_tool_calls = [
-                        ToolCallRequest(
-                            id=_short_tool_id(),
-                            name=tc["name"],
-                            arguments=json_repair.loads(tc["arguments"]) if tc["arguments"] else {},
-                        )
-                        for tc in accumulated_tool_calls.values()
-                    ]
+                final_finish = finish
 
-                usage = {}
-                if hasattr(chunk, "usage") and chunk.usage:
-                    usage = {
-                        "prompt_tokens": getattr(chunk.usage, "prompt_tokens", 0) or 0,
-                        "completion_tokens": getattr(chunk.usage, "completion_tokens", 0) or 0,
-                        "total_tokens": getattr(chunk.usage, "total_tokens", 0) or 0,
-                    }
-
-                yield StreamChunk(
-                    finish_reason=finish,
-                    tool_calls=final_tool_calls,
-                    usage=usage or None,
-                    reasoning_content="".join(reasoning_parts) or None,
+        # Emit final chunk after stream is exhausted (captures usage-only trailing chunk).
+        final_tool_calls = None
+        if accumulated_tool_calls:
+            final_tool_calls = [
+                ToolCallRequest(
+                    id=short_tool_id(),
+                    name=tc["name"],
+                    arguments=json_repair.loads(tc["arguments"]) if tc["arguments"] else {},
                 )
-                return
+                for tc in accumulated_tool_calls.values()
+            ]
+
+        yield StreamChunk(
+            finish_reason=final_finish or "stop",
+            tool_calls=final_tool_calls,
+            usage=final_usage or None,
+            reasoning_content="".join(reasoning_parts) or None,
+        )
 
     # ------------------------------------------------------------------
     # Request building
@@ -348,7 +340,7 @@ class OpenAIProvider(LLMProvider):
             if isinstance(args, str):
                 args = json_repair.loads(args)
             tool_calls.append(ToolCallRequest(
-                id=tc.id or _short_tool_id(),
+                id=tc.id or short_tool_id(),
                 name=tc.function.name,
                 arguments=args if isinstance(args, dict) else {},
             ))
@@ -391,6 +383,8 @@ def _handle_error(exc: Exception) -> LLMResponse:
         RateLimitError,
     )
 
+    from velo.providers.errors import classify_error
+
     error_msg = str(exc)
     code = "unknown"
 
@@ -405,6 +399,10 @@ def _handle_error(exc: Exception) -> LLMResponse:
         code = "server_error"
     elif isinstance(exc, APITimeoutError):
         code = "timeout"
+    else:
+        # Fallback to string-based classification for codes not covered by
+        # isinstance checks (e.g. budget_exceeded).
+        code = classify_error(error_msg)
 
     logger.warning("openai.request_failed: {}", error_msg[:200])
     return LLMResponse(

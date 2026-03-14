@@ -2,27 +2,25 @@
 
 from __future__ import annotations
 
-import secrets
-import string
 from collections.abc import AsyncIterator
 from typing import Any
 
 import json_repair
 from loguru import logger
 
-from velo.providers.base import LLMProvider, LLMResponse, StreamChunk, ToolCallRequest
-
-_ALNUM = string.ascii_letters + string.digits
+from velo.providers.base import (
+    LLMProvider,
+    LLMResponse,
+    StreamChunk,
+    ToolCallRequest,
+    short_tool_id,
+    strip_model_prefix,
+)
 
 # Message keys accepted by the Mistral API (OpenAI-compatible format).
 _ALLOWED_MSG_KEYS = frozenset(
     {"role", "content", "tool_calls", "tool_call_id", "name"}
 )
-
-
-def _short_tool_id() -> str:
-    """Generate a 9-char alphanumeric ID (Mistral's required format)."""
-    return "".join(secrets.choice(_ALNUM) for _ in range(9))
 
 
 class MistralProvider(LLMProvider):
@@ -58,9 +56,7 @@ class MistralProvider(LLMProvider):
     @staticmethod
     def _strip_prefix(model: str) -> str:
         """Strip 'mistral/' prefix from model name."""
-        if model.startswith("mistral/"):
-            return model[len("mistral/"):]
-        return model
+        return strip_model_prefix(model, "mistral/")
 
     @staticmethod
     def _map_tool_choice(tool_choice: str) -> str:
@@ -78,7 +74,7 @@ class MistralProvider(LLMProvider):
     def _normalize_tool_call_id(tool_call_id: str | None) -> str:
         """Normalize tool_call_id to Mistral's 9-char alphanumeric format."""
         if not tool_call_id:
-            return _short_tool_id()
+            return short_tool_id()
         if len(tool_call_id) == 9 and tool_call_id.isalnum():
             return tool_call_id
         import hashlib
@@ -273,7 +269,7 @@ class MistralProvider(LLMProvider):
                 if accumulated_tool_calls:
                     final_tool_calls = [
                         ToolCallRequest(
-                            id=_short_tool_id(),
+                            id=short_tool_id(),
                             name=tc["name"],
                             arguments=json_repair.loads(tc["arguments"]) if tc["arguments"] else {},
                         )
@@ -324,7 +320,7 @@ class MistralProvider(LLMProvider):
                 if isinstance(args, str):
                     args = json_repair.loads(args)
                 tool_calls.append(ToolCallRequest(
-                    id=_short_tool_id(),
+                    id=short_tool_id(),
                     name=fn.name,
                     arguments=args if isinstance(args, dict) else {},
                 ))

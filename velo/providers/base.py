@@ -1,9 +1,34 @@
 """Base LLM provider interface."""
 
+import secrets
+import string
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
+
+_ALNUM = string.ascii_letters + string.digits
+
+
+def short_tool_id() -> str:
+    """Generate a 9-char alphanumeric ID compatible with all providers (incl. Mistral)."""
+    return "".join(secrets.choice(_ALNUM) for _ in range(9))
+
+
+def strip_model_prefix(model: str, *prefixes: str) -> str:
+    """Strip known provider prefixes from a model name.
+
+    Args:
+        model: Model identifier (e.g. 'anthropic/claude-sonnet-4-6').
+        *prefixes: Prefixes to strip (e.g. 'anthropic/').
+
+    Returns:
+        str: Model name with prefix removed if matched.
+    """
+    for prefix in prefixes:
+        if model.startswith(prefix):
+            return model[len(prefix):]
+    return model
 
 
 @dataclass
