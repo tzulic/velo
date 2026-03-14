@@ -435,6 +435,40 @@ wheels = [
 ]
 
 [[package]]
+name = "composio"
+version = "0.11.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "composio-client" },
+    { name = "json-schema-to-pydantic" },
+    { name = "openai" },
+    { name = "pydantic" },
+    { name = "pysher" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/cd/cb35df4d220e3954a0759fb50c66f48f0d71e0bc1ec69ca83899a485e11b/composio-0.11.3.tar.gz", hash = "sha256:e2e335ad9393043b0a1ae61bb2c3bc1a5a69feea6169b4f5a86d088ba015e539", size = 153277, upload-time = "2026-03-13T11:11:38.497Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ad/bc/dcd74c13495f213467e8da63153c2207d53f58e813d2676eeab7dcf4bbbb/composio-0.11.3-py3-none-any.whl", hash = "sha256:131a423b928583f87716b6570b87a66fab7222e0b7fcad5237498b1e504d7d40", size = 101945, upload-time = "2026-03-13T11:11:24.768Z" },
+]
+
+[[package]]
+name = "composio-client"
+version = "1.28.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/99/45/5f063d364bef7879252c3dab517a42a9f3fdf1ad8943895f5b718c27fd31/composio_client-1.28.0.tar.gz", hash = "sha256:787869c1fba543f07aa26d1f64e5f37e4909465b37af24ec4b5a01fd73115045", size = 209918, upload-time = "2026-03-09T04:34:49.137Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4e/8c/901f59aaf8674f8bda6da1fbae087eb5209f11a9b26f6118c2be49702d0c/composio_client-1.28.0-py3-none-any.whl", hash = "sha256:8f037d8e66b3bfb3aa701b4d26c8a242d22638031b938a363874ebc41e4710ee", size = 239827, upload-time = "2026-03-09T04:34:47.591Z" },
+]
+
+[[package]]
 name = "croniter"
 version = "6.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1090,6 +1124,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/4b/4d/5b654ef49ed6077f8f8206dae41c2a2de8fef4877483b2c85652ed95fbaf/json_repair-0.58.5.tar.gz", hash = "sha256:2dfdb44573197eeea8eda23f23677412634b2fe2a93bd1dbe4f1b88e4896efa3", size = 44686, upload-time = "2026-03-07T12:57:16.504Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bf/55/390151425cd3095da09d38328481ce9ebd0a4f476882ee74849d5b530cf8/json_repair-0.58.5-py3-none-any.whl", hash = "sha256:16f65addc58d8e0b2b8514e3f6ea9ff568267ce94ead95f4faf90e40dd35d526", size = 43458, upload-time = "2026-03-07T12:57:15.455Z" },
+]
+
+[[package]]
+name = "json-schema-to-pydantic"
+version = "0.4.11"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/60/d8/423895b918706c80db1cee679c13fbe810200b9a9d9a9442c7a58d35c3f2/json_schema_to_pydantic-0.4.11.tar.gz", hash = "sha256:35448ed711a28dd33396b095c8492939b4925aa30eb31942e9b8e08d04279465", size = 56597, upload-time = "2026-03-09T20:53:55.692Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/64/7cfeb8c6d2a5e73e0f8d732032aa62be9a7724c04beb461d677de0b4beb3/json_schema_to_pydantic-0.4.11-py3-none-any.whl", hash = "sha256:da2ccc39d070ee03dbcf0517d16720e3e33f7aa8d61257ace09af8c51bd46348", size = 17842, upload-time = "2026-03-09T20:53:54.576Z" },
 ]
 
 [[package]]
@@ -2192,6 +2238,16 @@ crypto = [
 ]
 
 [[package]]
+name = "pysher"
+version = "1.0.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "websocket-client" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/12/a0/d0638470df605ce266991fb04f74c69ab1bed3b90ac3838e9c3c8b69b66a/Pysher-1.0.8.tar.gz", hash = "sha256:7849c56032b208e49df67d7bd8d49029a69042ab0bb45b2ed59fa08f11ac5988", size = 9071, upload-time = "2022-10-10T13:41:09.936Z" }
+
+[[package]]
 name = "pytest"
 version = "9.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3027,6 +3083,7 @@ source = { editable = "." }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
     { name = "chardet" },
+    { name = "composio" },
     { name = "croniter" },
     { name = "dingtalk-stream" },
     { name = "httpx" },
@@ -3078,6 +3135,7 @@ matrix = [
 requires-dist = [
     { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.0,<0.4.0" },
     { name = "chardet", specifier = ">=3.0.2,<6.0.0" },
+    { name = "composio", specifier = ">=0.11.0" },
     { name = "croniter", specifier = ">=6.0.0,<7.0.0" },
     { name = "dingtalk-stream", specifier = ">=0.24.0,<1.0.0" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },

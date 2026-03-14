@@ -105,6 +105,12 @@ class ToolRegistry:
                 rest = name[4:]  # strip "mcp_"
                 server = rest.split("_")[0]
                 groups[server] = groups.get(server, 0) + 1
+            elif name.startswith("composio_"):
+                # composio_{toolkit}_{action}: extract toolkit as first segment
+                rest = name[9:]  # strip "composio_"
+                toolkit = rest.split("_")[0]
+                key = f"composio:{toolkit}"
+                groups[key] = groups.get(key, 0) + 1
             else:
                 groups[name] = groups.get(name, 0) + 1
 
