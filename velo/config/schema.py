@@ -261,6 +261,7 @@ class AgentDefaults(Base):
         False  # Append JSONL turn records to workspace/trajectories/ for debugging
     )
     session_backend: Literal["jsonl", "sqlite"] = "jsonl"  # Session persistence backend
+    max_iteration_budget: int | None = None  # Shared LLM iteration cap across parent + subagents
 
 
 class AgentsConfig(Base):

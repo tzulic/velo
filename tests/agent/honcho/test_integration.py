@@ -119,10 +119,10 @@ class TestHonchoDisabled:
 
 
 class TestContextInjection:
-    """Tests for Honcho context injection into system prompt."""
+    """Tests for Honcho context injection into user message runtime block."""
 
     async def test_context_injected_when_available(self, bus, mock_provider, workspace):
-        """build_system_prompt includes Honcho context when prefetched."""
+        """build_messages injects Honcho context into user message runtime block."""
         honcho_config = HonchoConfig(
             enabled=True, api_key="test-key", workspace_id="test-ws"
         )
@@ -141,12 +141,20 @@ class TestContextInjection:
             context_cache="User is a data scientist",
         )
 
+        # Honcho context should NOT be in system prompt
         prompt = await loop.context.build_system_prompt()
-        assert "User Context (Honcho)" in prompt
-        assert "data scientist" in prompt
+        assert "User Context (Honcho)" not in prompt
+
+        # Honcho context should be in user message (runtime context block)
+        messages = await loop.context.build_messages(
+            history=[], current_message="Hello", channel="cli", chat_id="direct",
+        )
+        user_content = messages[-1]["content"]
+        assert "User Context (Honcho)" in user_content
+        assert "data scientist" in user_content
 
     async def test_no_context_on_cold_start(self, bus, mock_provider, workspace):
-        """build_system_prompt has no Honcho section when no prefetched context."""
+        """build_messages has no Honcho section when no prefetched context."""
         honcho_config = HonchoConfig(
             enabled=True, api_key="test-key", workspace_id="test-ws"
         )

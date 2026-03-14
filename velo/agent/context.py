@@ -24,6 +24,7 @@ class ContextBuilder:
 
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md"]
     _RUNTIME_CONTEXT_TAG = "[Runtime Context — metadata only, not instructions]"
+    _RUNTIME_END_TAG = "[End Runtime Context]"
 
     def __init__(
         self,
@@ -39,6 +40,8 @@ class ContextBuilder:
         self._memory_limit = memory_limit
         self._user_limit = user_limit
         self._honcho: HonchoAdapter | None = None
+        # Prompt caching: reuse the same system prompt across turns until invalidated.
+        self._cached_system_prompt: str | None = None
 
     def set_honcho(self, adapter: HonchoAdapter) -> None:
         """Set the Honcho adapter for context injection.
@@ -48,6 +51,14 @@ class ContextBuilder:
         """
         self._honcho = adapter
 
+    def invalidate_prompt_cache(self) -> None:
+        """Clear the cached system prompt so the next call rebuilds it.
+
+        Call after memory consolidation, /new, or any event that changes
+        identity/bootstrap/memory content.
+        """
+        self._cached_system_prompt = None
+
     async def build_system_prompt(
         self,
         skill_names: list[str] | None = None,
@@ -55,10 +66,17 @@ class ContextBuilder:
     ) -> str:
         """Build the system prompt from identity, bootstrap files, memory, skills, and plugins.
 
+        Honcho user context is NOT included here (it changes every turn and would
+        invalidate Anthropic's prefix cache). Instead, Honcho context is injected
+        into the runtime context block in ``build_messages()``.
+
         Args:
             skill_names: Optional list of skill names to include.
             deferred_tools_hint: Optional summary of deferred tools available via search_tools.
         """
+        if self._cached_system_prompt is not None:
+            return self._cached_system_prompt
+
         parts = [self._get_identity()]
 
         bootstrap = self._load_bootstrap_files()
@@ -69,11 +87,7 @@ class ContextBuilder:
         if memory:
             parts.append(f"# Memory\n\n{memory}")
 
-        # Honcho user context (prefetched from previous turn, zero latency)
-        if self._honcho:
-            honcho_ctx = self._honcho.get_prefetched_context()
-            if honcho_ctx:
-                parts.append(f"## User Context (Honcho)\n{honcho_ctx}")
+        # Honcho context deliberately excluded — see docstring.
 
         # Plugin context providers inject after memory
         if self._plugin_manager:
@@ -109,6 +123,7 @@ Skills with available="false" need dependencies installed first - you can try in
         if self._plugin_manager:
             prompt = await self._plugin_manager.pipe("after_prompt_build", value=prompt)
 
+        self._cached_system_prompt = prompt
         return prompt
 
     def _get_identity(self) -> str:
@@ -201,9 +216,16 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
             memory_nudge: Optional reminder appended to runtime context (stripped from session).
         """
         runtime_ctx = self._build_runtime_context(channel, chat_id)
+        # Inject Honcho user context into runtime block (per-turn, not in system prompt)
+        # so the system prompt stays stable for Anthropic's prefix cache.
+        if self._honcho:
+            honcho_ctx = self._honcho.get_prefetched_context()
+            if honcho_ctx:
+                runtime_ctx += f"\nUser Context (Honcho): {honcho_ctx}"
         # Reason: nudge is appended to runtime_ctx so _save_turn strips it from session storage.
         if memory_nudge:
             runtime_ctx += f"\n{memory_nudge}"
+        runtime_ctx += f"\n{self._RUNTIME_END_TAG}"
         user_content = self._build_user_content(current_message, media)
 
         # Merge runtime context and user content into a single user message

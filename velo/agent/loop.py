@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from loguru import logger
 
+from velo.agent.budget import IterationBudget
 from velo.agent.context import ContextBuilder
 from velo.agent.context_compressor import compress_context
 from velo.agent.llm_helpers import (
@@ -40,9 +41,8 @@ from velo.agent.tools.search import SearchToolsTool
 from velo.agent.tools.shell import ExecTool
 from velo.agent.tools.spawn import SpawnTool
 from velo.agent.tools.web import WebFetchTool, WebSearchTool
-from velo.bus.events import InboundMessage, OutboundMessage
-# Honcho integration (lazy import of adapter/tools in __init__)
-from velo.bus.queue import MessageBus
+from velo.bus.events import InboundMessage, OutboundMessage  # noqa: I001
+from velo.bus.queue import MessageBus  # Honcho: lazy import of adapter/tools in __init__
 from velo.providers.base import LLMProvider, LLMResponse
 from velo.providers.context_limits import estimate_tokens, get_context_window
 from velo.providers.errors import RETRYABLE_ERRORS
@@ -189,6 +189,7 @@ class AgentLoop:
         save_trajectories: bool = False,
         clarify_callback: Callable[[str, list[str] | None], Awaitable[str]] | None = None,
         honcho_config: "HonchoConfig | None" = None,
+        max_iteration_budget: int | None = None,
     ):
         from velo.config.schema import BrowseConfig, ExecToolConfig
 
@@ -273,6 +274,10 @@ class AgentLoop:
             weakref.WeakValueDictionary()
         )
         self._rate_limiter = RateLimiter()
+        # Iteration budget: shared cap across parent + subagents (None = unlimited)
+        self._max_iteration_budget = max_iteration_budget
+        # Interrupt mechanism: per-session events for cancelling stale processing
+        self._interrupt_events: dict[str, asyncio.Event] = {}
         self._register_default_tools(a2a_peers, clarify_callback)
         self._register_plugin_tools()
 
@@ -465,6 +470,7 @@ class AgentLoop:
         initial_messages: list[dict],
         on_progress: Callable[..., Awaitable[None]] | None = None,
         session_key: str = "",
+        budget: IterationBudget | None = None,
     ) -> tuple[str | None, list[str], list[dict]]:
         """Run the agent iteration loop. Returns (final_content, tools_used, messages).
 
@@ -472,6 +478,7 @@ class AgentLoop:
             initial_messages (list[dict]): Pre-built message list including system + history.
             on_progress (Callable | None): Optional streaming progress callback.
             session_key (str): Session key for usage logging.
+            budget (IterationBudget | None): Shared iteration budget (None = unlimited).
 
         Returns:
             tuple[str | None, list[str], list[dict]]: final content, tools used, all messages.
@@ -488,6 +495,7 @@ class AgentLoop:
                 run_id=run_id,
                 start_ms=start_ms,
                 provider_id=_provider_id,
+                budget=budget,
             )
 
     async def _run_agent_loop_inner(
@@ -498,6 +506,7 @@ class AgentLoop:
         run_id: str,
         start_ms: int,
         provider_id: str,
+        budget: IterationBudget | None = None,
     ) -> tuple[str | None, list[str], list[dict]]:
         """Inner loop body, called within a logger.contextualize block."""
         messages = initial_messages
@@ -512,6 +521,20 @@ class AgentLoop:
         last_compressed_iter = -999  # Cooldown: don't re-compress within 3 iterations
 
         while iteration < self.max_iterations:
+            # Interrupt check: if a newer message arrived for this session, bail out.
+            if evt := self._interrupt_events.get(session_key):
+                if evt.is_set():
+                    logger.info("agent.interrupted: session={}", session_key)
+                    return (None, tools_used, messages)
+
+            # Budget pre-flight: consume one iteration before calling the LLM.
+            if budget is not None and not await budget.consume():
+                logger.info("agent.budget_exhausted: session={}", session_key)
+                final_content = (
+                    "I've used all available processing iterations for this request. "
+                    "Here's what I've accomplished so far."
+                )
+                break
             iteration += 1
             # Refresh tool definitions each iteration so newly activated tools are included.
             tool_defs = self.tools.get_definitions()
@@ -564,6 +587,14 @@ class AgentLoop:
                     on_progress,
                     **llm_kwargs,
                 )
+                # Streaming fallback: if stream failed with a retryable error,
+                # activate fallback provider and retry via non-streaming path.
+                if (
+                    response.finish_reason == "error"
+                    and response.error_code in RETRYABLE_ERRORS
+                    and self._try_activate_fallback()
+                ):
+                    response = await self._chat_with_retry(**llm_kwargs)
             else:
                 response = await self._chat_with_retry(**llm_kwargs)
 
@@ -625,7 +656,20 @@ class AgentLoop:
                     thinking_blocks=response.thinking_blocks,
                 )
 
-                for tool_call in response.tool_calls:
+                pending_tools = list(response.tool_calls)
+                for idx, tool_call in enumerate(pending_tools):
+                    # Interrupt check between tool calls
+                    if evt := self._interrupt_events.get(session_key):
+                        if evt.is_set():
+                            # Stub remaining tool results so the message list stays valid
+                            for remaining in pending_tools[idx:]:
+                                messages = self.context.add_tool_result(
+                                    messages, remaining.id, remaining.name,
+                                    "[Interrupted — new message received]",
+                                )
+                            logger.info("agent.interrupted_between_tools: session={}", session_key)
+                            return (None, tools_used, messages)
+
                     tools_used.append(tool_call.name)
                     params = tool_call.arguments
                     # Plugin hook: before_tool_call
@@ -646,6 +690,11 @@ class AgentLoop:
                             tool_name=tool_call.name,
                             params=params,
                         )
+                    # Budget warning: inject into the last tool result so the LLM sees it
+                    if budget is not None and idx == len(pending_tools) - 1:
+                        warning = budget.warning_message()
+                        if warning:
+                            result = f"{result}\n\n{warning}"
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
                     )
@@ -742,6 +791,16 @@ class AgentLoop:
             if msg.content.strip().lower() == "/stop":
                 await self._handle_stop(msg)
             else:
+                # Interrupt: if this session already has running tasks, signal them
+                # to exit gracefully at their next check point (top of loop iteration
+                # or between tool calls). We don't cancel tasks here — that would kill
+                # tasks that are merely waiting for the session lock.
+                existing = self._active_tasks.get(msg.session_key, [])
+                running = [t for t in existing if not t.done()]
+                if running:
+                    evt = self._interrupt_events.setdefault(msg.session_key, asyncio.Event())
+                    evt.set()
+
                 task = asyncio.create_task(self._dispatch(msg))
                 self._active_tasks.setdefault(msg.session_key, []).append(task)
                 task.add_done_callback(
@@ -795,6 +854,9 @@ class AgentLoop:
         # Per-session lock: setdefault is atomic in CPython's event loop (single-threaded)
         lock = self._session_locks.setdefault(msg.session_key, asyncio.Lock())
         async with lock:
+            # Clear interrupt event so this new dispatch runs cleanly.
+            if evt := self._interrupt_events.get(msg.session_key):
+                evt.clear()
             try:
                 response = await self._process_message(msg)
                 if response is not None:
@@ -927,6 +989,7 @@ class AgentLoop:
             self.sessions.save(session)
             self.sessions.invalidate(session.key)
             self._turn_counts.pop(key, None)
+            self.context.invalidate_prompt_cache()
             return OutboundMessage(
                 channel=msg.channel, chat_id=msg.chat_id, content="New session started."
             )
@@ -1003,10 +1066,18 @@ class AgentLoop:
         if self._honcho:
             self._honcho.set_current_session(key)
 
+        # Create per-request iteration budget (shared with subagents)
+        budget: IterationBudget | None = None
+        if self._max_iteration_budget is not None:
+            budget = IterationBudget(self._max_iteration_budget)
+        # Pass budget to subagent manager so spawned tasks draw from the same pool.
+        self.subagents.budget = budget
+
         final_content, _, all_msgs = await self._run_agent_loop(
             initial_messages,
             on_progress=on_progress or _bus_progress,
             session_key=key,
+            budget=budget,
         )
 
         if final_content is None:
@@ -1054,10 +1125,17 @@ class AgentLoop:
                 if isinstance(content, str) and content.startswith(
                     ContextBuilder._RUNTIME_CONTEXT_TAG
                 ):
-                    # Strip the runtime-context prefix, keep only the user text.
-                    parts = content.split("\n\n", 1)
-                    if len(parts) > 1 and parts[1].strip():
-                        entry["content"] = parts[1]
+                    # Strip runtime-context prefix. Prefer the explicit end tag, fall back
+                    # to double-newline split for backward compatibility with older sessions.
+                    end_tag = ContextBuilder._RUNTIME_END_TAG
+                    if end_tag in content:
+                        _, _, user_text = content.partition(end_tag)
+                        user_text = user_text.strip()
+                    else:
+                        parts = content.split("\n\n", 1)
+                        user_text = parts[1].strip() if len(parts) > 1 else ""
+                    if user_text:
+                        entry["content"] = user_text
                     else:
                         continue
                 if isinstance(content, list):
@@ -1084,7 +1162,7 @@ class AgentLoop:
 
     async def _consolidate_memory(self, session: Any, archive_all: bool = False) -> bool:
         """Delegate to MemoryStore.consolidate(). Returns True on success."""
-        return await self.context.memory.consolidate(
+        result = await self.context.memory.consolidate(
             session,
             self.provider,
             self.model,
@@ -1094,6 +1172,9 @@ class AgentLoop:
             user_limit=self.user_char_limit,
             honcho_active=bool(self._honcho),
         )
+        # Reason: memory files may have changed, so the cached system prompt is stale.
+        self.context.invalidate_prompt_cache()
+        return result
 
     async def process_direct(
         self,

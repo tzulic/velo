@@ -3,6 +3,7 @@
 from typing import Any
 
 from velo.agent.tools.base import Tool
+from velo.agent.tools.sanitize import sanitize_tool_result
 
 
 class ToolRegistry:
@@ -161,6 +162,7 @@ class ToolRegistry:
             if errors:
                 return f"Error: Invalid parameters for tool '{name}': " + "; ".join(errors) + hint
             result = await tool.execute(**params)
+            result = sanitize_tool_result(result)
             if isinstance(result, str) and result.startswith("Error"):
                 return result + hint
             return result
