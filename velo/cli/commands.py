@@ -471,6 +471,7 @@ def gateway(
         fallback_provider=fallback_provider,
         subagent_model=config.agents.defaults.subagent_model,
         save_trajectories=config.agents.defaults.save_trajectories,
+        honcho_config=config.honcho,
     )
 
     # Set cron callback (needs agent)
@@ -706,6 +707,7 @@ def agent(
         subagent_model=config.agents.defaults.subagent_model,
         save_trajectories=config.agents.defaults.save_trajectories,
         clarify_callback=clarify_callback,
+        honcho_config=config.honcho,
     )
 
     # Show spinner when logs are off (no output to miss); skip when logs are on

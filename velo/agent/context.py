@@ -15,6 +15,7 @@ from velo.agent.skills import SkillsLoader
 from velo.utils.helpers import detect_image_mime
 
 if TYPE_CHECKING:
+    from velo.agent.honcho.adapter import HonchoAdapter
     from velo.plugins.manager import PluginManager
 
 
@@ -37,6 +38,15 @@ class ContextBuilder:
         self._plugin_manager = plugin_manager
         self._memory_limit = memory_limit
         self._user_limit = user_limit
+        self._honcho: HonchoAdapter | None = None
+
+    def set_honcho(self, adapter: HonchoAdapter) -> None:
+        """Set the Honcho adapter for context injection.
+
+        Args:
+            adapter: HonchoAdapter instance to use for user context.
+        """
+        self._honcho = adapter
 
     async def build_system_prompt(
         self,
@@ -58,6 +68,16 @@ class ContextBuilder:
         memory = self.memory.get_memory_context(self._memory_limit, self._user_limit)
         if memory:
             parts.append(f"# Memory\n\n{memory}")
+
+        # Honcho user context (prefetched from previous turn, zero latency)
+        if self._honcho:
+            # Reason: pop_context_result returns "" on cold start (turn 1)
+            # or if prefetch hasn't completed; this is expected and harmless.
+            honcho_ctx = self._honcho.pop_context_result(
+                self._honcho.current_session_key
+            )
+            if honcho_ctx:
+                parts.append(f"## User Context (Honcho)\n{honcho_ctx}")
 
         # Plugin context providers inject after memory
         if self._plugin_manager:
