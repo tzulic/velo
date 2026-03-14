@@ -13,6 +13,36 @@ class TestComputeCost:
         # $3/M input + $15/M output = $18
         assert abs(cost - 18.0) < 0.01
 
+    def test_claude_sonnet_4_6_explicit(self):
+        """Explicit claude-sonnet-4-6 entry matches before generic claude-sonnet."""
+        cost = compute_cost("claude-sonnet-4-6", 500_000, 200_000)
+        # $3/M * 0.5 + $15/M * 0.2 = $1.50 + $3.00 = $4.50
+        assert abs(cost - 4.50) < 0.01
+
+    def test_claude_sonnet_generic_still_works(self):
+        """Generic claude-sonnet prefix still matches other sonnet variants."""
+        cost = compute_cost("claude-sonnet-3-5", 1_000_000, 1_000_000)
+        # $3/M input + $15/M output = $18
+        assert abs(cost - 18.0) < 0.01
+
+    def test_claude_haiku_4_5(self):
+        """Explicit claude-haiku-4-5 entry uses $1/$5 rates."""
+        cost = compute_cost("claude-haiku-4-5", 1_000_000, 1_000_000)
+        # $1/M input + $5/M output = $6
+        assert abs(cost - 6.0) < 0.01
+
+    def test_claude_haiku_4_5_partial_tokens(self):
+        """claude-haiku-4-5 with non-round token counts."""
+        cost = compute_cost("claude-haiku-4-5", 250_000, 100_000)
+        # $1/M * 0.25 + $5/M * 0.1 = $0.25 + $0.50 = $0.75
+        assert abs(cost - 0.75) < 0.01
+
+    def test_claude_haiku_generic_still_works(self):
+        """Generic claude-haiku prefix still matches older haiku variants."""
+        cost = compute_cost("claude-haiku-3-5", 1_000_000, 1_000_000)
+        # $0.25/M input + $1.25/M output = $1.50
+        assert abs(cost - 1.50) < 0.01
+
     def test_gpt4o_mini(self):
         cost = compute_cost("gpt-4o-mini", 1_000_000, 1_000_000)
         # $0.15/M + $0.60/M = $0.75

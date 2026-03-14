@@ -47,6 +47,7 @@ dependencies = [
     "chardet>=3.0.2,<6.0.0",
     "openai>=2.8.0",
     "rank-bm25>=0.2.2,<1.0.0",
+    "composio>=0.11.0",
     "a2a-sdk[http-server]>=0.3.0,<0.4.0",
     "uvicorn>=0.30.0,<1.0.0",
 ]

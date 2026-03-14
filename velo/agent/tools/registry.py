@@ -85,30 +85,47 @@ class ToolRegistry:
 
         return results
 
-    def get_deferred_summary(self) -> str | None:
-        """Return a concise summary of deferred tools grouped by MCP server.
+    # Prefixes used to group deferred tools in summaries.
+    # (prefix_to_strip, display_prefix): "mcp_github_foo" → group key "github"
+    _TOOL_PREFIXES: list[tuple[str, str]] = [
+        ("mcp_", ""),
+        ("composio_", "composio:"),
+    ]
 
-        Groups tools by their mcp_{server_name} prefix. Non-MCP deferred tools
-        are listed by name.
+    def get_deferred_summary(self) -> str | None:
+        """Return a concise summary of deferred tools grouped by source.
+
+        Groups tools by known prefixes (``mcp_``, ``composio_``). Ungrouped
+        deferred tools are listed by name.
 
         Returns:
-            Comma-separated string like "github (12 tools), slack (8 tools)", or
-            None if no deferred tools.
+            Comma-separated string like "github (12 tools), composio:gmail (5 tools)",
+            or None if no deferred tools.
         """
         if not self._deferred:
             return None
 
         groups: dict[str, int] = {}
         for name in self._deferred:
-            if name.startswith("mcp_"):
-                # mcp_{server_name}_{tool_name}: extract server_name as first segment
-                rest = name[4:]  # strip "mcp_"
-                server = rest.split("_")[0]
-                groups[server] = groups.get(server, 0) + 1
-            else:
-                groups[name] = groups.get(name, 0) + 1
+            key = self._deferred_group_key(name)
+            groups[key] = groups.get(key, 0) + 1
 
         return ", ".join(f"{g} ({c} tools)" for g, c in sorted(groups.items()))
+
+    def _deferred_group_key(self, name: str) -> str:
+        """Derive the display group key for a deferred tool name.
+
+        Args:
+            name: Full tool name (e.g., ``mcp_github_create_issue``).
+
+        Returns:
+            Group key (e.g., ``github``).
+        """
+        for prefix, display_prefix in self._TOOL_PREFIXES:
+            if name.startswith(prefix):
+                segment = name[len(prefix) :].split("_")[0]
+                return f"{display_prefix}{segment}"
+        return name
 
     def unregister(self, name: str) -> None:
         """Unregister a tool by name (active or deferred)."""

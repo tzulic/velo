@@ -19,7 +19,9 @@ from loguru import logger
 _COST_TABLE: list[tuple[str, float, float]] = [
     # (substring, input_cost_per_M, output_cost_per_M)
     ("claude-opus", 15.0, 75.0),
+    ("claude-sonnet-4-6", 3.0, 15.0),
     ("claude-sonnet", 3.0, 15.0),
+    ("claude-haiku-4-5", 1.0, 5.0),
     ("claude-haiku", 0.25, 1.25),
     ("gpt-4o-mini", 0.15, 0.60),  # must be before "gpt-4o"
     ("gpt-4o", 5.0, 15.0),
