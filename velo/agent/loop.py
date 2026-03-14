@@ -49,6 +49,7 @@ from velo.providers.errors import RETRYABLE_ERRORS
 from velo.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
+    from velo.agent.honcho.config import HonchoConfig
     from velo.config.schema import A2APeerConfig, BrowseConfig, ChannelsConfig, ExecToolConfig
     from velo.cron.service import CronService
     from velo.plugins.manager import PluginManager
@@ -187,7 +188,7 @@ class AgentLoop:
         subagent_model: str | None = None,
         save_trajectories: bool = False,
         clarify_callback: Callable[[str, list[str] | None], Awaitable[str]] | None = None,
-        honcho_config: Any = None,
+        honcho_config: "HonchoConfig | None" = None,
     ):
         from velo.config.schema import BrowseConfig, ExecToolConfig
 
@@ -1017,8 +1018,12 @@ class AgentLoop:
 
         # Sync messages to Honcho and prefetch context for next turn (non-blocking)
         if self._honcho:
-            asyncio.create_task(self._honcho.sync_messages(key, session.messages))
-            asyncio.create_task(self._honcho.prefetch_context(key))
+            self._honcho.track_task(
+                key, asyncio.create_task(self._honcho.sync_messages(key, session.messages))
+            )
+            self._honcho.track_task(
+                key, asyncio.create_task(self._honcho.prefetch_context(key))
+            )
 
         if (mt := self.tools.get("message")) and isinstance(mt, MessageTool) and mt._sent_in_turn:
             return None

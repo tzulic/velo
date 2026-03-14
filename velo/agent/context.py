@@ -71,11 +71,7 @@ class ContextBuilder:
 
         # Honcho user context (prefetched from previous turn, zero latency)
         if self._honcho:
-            # Reason: pop_context_result returns "" on cold start (turn 1)
-            # or if prefetch hasn't completed; this is expected and harmless.
-            honcho_ctx = self._honcho.pop_context_result(
-                self._honcho.current_session_key
-            )
+            honcho_ctx = self._honcho.get_prefetched_context()
             if honcho_ctx:
                 parts.append(f"## User Context (Honcho)\n{honcho_ctx}")
 

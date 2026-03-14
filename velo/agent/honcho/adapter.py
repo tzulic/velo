@@ -56,9 +56,9 @@ class HonchoAdapter:
         self._config = config
         self._client: Any = None
         self._sessions: dict[str, HonchoSessionState] = {}
-        self._pending_messages: dict[str, list[dict[str, str]]] = {}
         self._lock = asyncio.Lock()
         self._current_session_key: str = ""
+        self._background_tasks: set[asyncio.Task[None]] = set()
 
     @property
     def current_session_key(self) -> str:
@@ -78,6 +78,29 @@ class HonchoAdapter:
             key: Velo session key (e.g. "telegram:12345").
         """
         self._current_session_key = key
+
+    def track_task(self, key: str, task: asyncio.Task[None]) -> None:
+        """Track a background task so it can be awaited on shutdown.
+
+        Tasks auto-remove themselves when done via a callback.
+
+        Args:
+            key: Session key (for logging on failure).
+            task: The asyncio task to track.
+        """
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    def get_prefetched_context(self) -> str:
+        """Get and clear prefetched context for the current session.
+
+        Convenience wrapper that combines current_session_key with
+        pop_context_result. Returns "" on cold start or if no session.
+
+        Returns:
+            Cached user context string, or "".
+        """
+        return self.pop_context_result(self._current_session_key)
 
     def _ensure_client(self) -> Any:
         """Lazily create the AsyncHoncho client.
@@ -219,11 +242,18 @@ class HonchoAdapter:
             logger.exception("honcho.sync_messages_failed: key={}", key)
 
     async def flush_all(self) -> None:
-        """Flush any pending message syncs for all sessions.
+        """Await pending background tasks and cancel prefetches.
 
-        Called during shutdown to ensure no messages are lost.
+        Called during shutdown to ensure sync tasks complete and
+        no fire-and-forget tasks are orphaned.
         """
-        for key, state in self._sessions.items():
+        # Await tracked sync/prefetch tasks (let them finish gracefully)
+        if self._background_tasks:
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            self._background_tasks.clear()
+
+        # Cancel any session-level prefetch tasks
+        for state in self._sessions.values():
             if state._prefetch_task and not state._prefetch_task.done():
                 state._prefetch_task.cancel()
                 try:
