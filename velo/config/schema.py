@@ -234,8 +234,12 @@ class AgentDefaults(Base):
     reasoning_effort: str | None = None  # low / medium / high — enables LLM thinking mode
     context_window: int | None = None  # Override auto-detected context window (tokens)
     subagent_model: str | None = None  # Cheaper model for subagents; defaults to main model
-    fallback_model: str | None = None  # Backup model if primary exhausts retries (e.g. "openrouter/anthropic/claude-3-5-haiku")
-    save_trajectories: bool = False  # Append JSONL turn records to workspace/trajectories/ for debugging
+    fallback_model: str | None = (
+        None  # Backup model if primary exhausts retries (e.g. "openrouter/anthropic/claude-3-5-haiku")
+    )
+    save_trajectories: bool = (
+        False  # Append JSONL turn records to workspace/trajectories/ for debugging
+    )
     session_backend: Literal["jsonl", "sqlite"] = "jsonl"  # Session persistence backend
 
 
@@ -258,7 +262,7 @@ class CliProviderConfig(ProviderConfig):
 
     api_key: str = "cli"  # Sentinel value — not a real key, just satisfies ProviderConfig interface
     model: str = "sonnet"  # CLI model alias: sonnet, opus, haiku, or versioned name
-    timeout_s: int = 900   # Max seconds to wait for CLI subprocess (300s too low for agentic tasks)
+    timeout_s: int = 900  # Max seconds to wait for CLI subprocess (300s too low for agentic tasks)
     permission_mode: str = "bypassPermissions"  # Claude CLI permission mode
     cli_path: str = "claude"  # Path to the claude binary
 
@@ -288,7 +292,9 @@ class ProvidersConfig(Base):
     volcengine: ProviderConfig = Field(default_factory=ProviderConfig)  # VolcEngine (火山引擎)
     openai_codex: ProviderConfig = Field(default_factory=ProviderConfig)  # OpenAI Codex (OAuth)
     github_copilot: ProviderConfig = Field(default_factory=ProviderConfig)  # Github Copilot (OAuth)
-    claude_cli: CliProviderConfig = Field(default_factory=CliProviderConfig)  # Claude CLI (Claude Max subscription)
+    claude_cli: CliProviderConfig = Field(
+        default_factory=CliProviderConfig
+    )  # Claude CLI (Claude Max subscription)
 
 
 class HeartbeatConfig(Base):
@@ -354,6 +360,7 @@ class ExecToolConfig(Base):
 
     timeout: int = 60
     path_append: str = ""
+    extended_safety: bool = True  # Use full 29-pattern deny list (False = original 9)
 
 
 class MCPServerConfig(Base):

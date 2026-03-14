@@ -34,6 +34,7 @@ class Session:
     # Heartbeat deduplication: track last delivered heartbeat text and time
     last_heartbeat_text: str | None = None
     last_heartbeat_at: datetime | None = None
+    parent_session_id: str | None = None
 
     def add_message(self, role: str, content: str, **kwargs: Any) -> None:
         """Add a message to the session."""
@@ -94,6 +95,14 @@ class SessionManager:
 
             db_path = self.sessions_dir / "sessions.db"
             self._sqlite = SQLiteSessionStore(db_path)
+
+    def get_search_store(self) -> Any:
+        """Return the SQLite store for search, or None if not using SQLite backend.
+
+        Returns:
+            SQLiteSessionStore | None: The underlying SQLite store, if available.
+        """
+        return self._sqlite
 
     def _get_session_path(self, key: str) -> Path:
         """Get the file path for a session."""
@@ -200,9 +209,7 @@ class SessionManager:
 
             # Repair: if corrupt lines were found, back up and rewrite clean data
             if dropped > 0:
-                logger.warning(
-                    "session.repair: dropped {} corrupt lines from {}", dropped, key
-                )
+                logger.warning("session.repair: dropped {} corrupt lines from {}", dropped, key)
                 shutil.copy2(path, path.with_suffix(".bak"))
                 self._save_jsonl(session)
 
