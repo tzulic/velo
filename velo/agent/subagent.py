@@ -45,7 +45,6 @@ class SubagentManager:
         exec_config: ExecToolConfig | None = None,
         restrict_to_workspace: bool = False,
         on_complete_callback: Callable[[dict[str, Any]], None] | None = None,
-        budget: IterationBudget | None = None,
     ):
         self.provider = provider
         self.workspace = workspace
@@ -61,10 +60,22 @@ class SubagentManager:
         self.restrict_to_workspace = restrict_to_workspace
         # Optional callback invoked when a subagent completes (for event-driven heartbeat).
         self.on_complete_callback = on_complete_callback
-        # Shared iteration budget (parent + subagents draw from the same pool).
-        self.budget: IterationBudget | None = budget
+        # Per-session iteration budgets (parent + subagents draw from the same pool).
+        self._session_budgets: dict[str, IterationBudget | None] = {}
         self._running_tasks: dict[str, asyncio.Task[None]] = {}
         self._session_tasks: dict[str, set[str]] = {}  # session_key -> {task_id, ...}
+
+    def set_budget(self, session_key: str, budget: IterationBudget | None) -> None:
+        """Set the iteration budget for subagents spawned under a session.
+
+        Args:
+            session_key: Session key to associate the budget with.
+            budget: Shared budget, or None for unlimited.
+        """
+        if budget is not None:
+            self._session_budgets[session_key] = budget
+        else:
+            self._session_budgets.pop(session_key, None)
 
     async def spawn(
         self,
@@ -204,7 +215,9 @@ class SubagentManager:
                     iteration += 1
 
                     # Shared budget pre-flight: stop if parent+subagents exhausted the pool
-                    if self.budget is not None and not await self.budget.consume():
+                    session_key = f"{origin['channel']}:{origin['chat_id']}"
+                    _budget = self._session_budgets.get(session_key)
+                    if _budget is not None and not await _budget.consume():
                         logger.info("subagent.budget_exhausted: id={}", task_id)
                         final_result = (
                             "Subagent stopped — iteration budget exhausted. "

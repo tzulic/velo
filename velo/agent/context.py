@@ -42,6 +42,7 @@ class ContextBuilder:
         self._honcho: HonchoAdapter | None = None
         # Prompt caching: reuse the same system prompt across turns until invalidated.
         self._cached_system_prompt: str | None = None
+        self._cached_deferred_hint: str | None = None
 
     def set_honcho(self, adapter: HonchoAdapter) -> None:
         """Set the Honcho adapter for context injection.
@@ -58,6 +59,7 @@ class ContextBuilder:
         identity/bootstrap/memory content.
         """
         self._cached_system_prompt = None
+        self._cached_deferred_hint = None
 
     async def build_system_prompt(
         self,
@@ -74,7 +76,11 @@ class ContextBuilder:
             skill_names: Optional list of skill names to include.
             deferred_tools_hint: Optional summary of deferred tools available via search_tools.
         """
-        if self._cached_system_prompt is not None:
+        # Return cached prompt if available and the deferred tools hint hasn't changed.
+        if (
+            self._cached_system_prompt is not None
+            and deferred_tools_hint == self._cached_deferred_hint
+        ):
             return self._cached_system_prompt
 
         parts = [self._get_identity()]
@@ -124,6 +130,7 @@ Skills with available="false" need dependencies installed first - you can try in
             prompt = await self._plugin_manager.pipe("after_prompt_build", value=prompt)
 
         self._cached_system_prompt = prompt
+        self._cached_deferred_hint = deferred_tools_hint
         return prompt
 
     def _get_identity(self) -> str:

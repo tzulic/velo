@@ -50,6 +50,11 @@ def sanitize_tool_result(result: str, max_chars: int = 16_000) -> str:
     if not result:
         return result
 
+    # Reason: both regexes require 200+ char matches, so shorter strings can't contain base64.
+    # Skip regex scanning entirely for short results that are also under the limit.
+    if len(result) < 200 and len(result) <= max_chars:
+        return result
+
     # Step 1: always strip base64 (it's pure waste for the LLM, even if under limit)
     cleaned = _DATA_URI_RE.sub("[base64 data removed]", result)
     cleaned = _RAW_B64_RE.sub(

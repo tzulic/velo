@@ -276,7 +276,8 @@ class AgentLoop:
         self._rate_limiter = RateLimiter()
         # Iteration budget: shared cap across parent + subagents (None = unlimited)
         self._max_iteration_budget = max_iteration_budget
-        # Interrupt mechanism: per-session events for cancelling stale processing
+        # Interrupt mechanism: per-session events for cancelling stale processing.
+        # Cleaned up in _handle_stop and when sessions have no active tasks.
         self._interrupt_events: dict[str, asyncio.Event] = {}
         self._register_default_tools(a2a_peers, clarify_callback)
         self._register_plugin_tools()
@@ -554,8 +555,8 @@ class AgentLoop:
 
             # Proactive context trim: if still close to the limit, trim before calling LLM.
             if est > ctx_window * PROACTIVE_TRIM_THRESHOLD:
-                budget = int(ctx_window * PROACTIVE_TRIM_TARGET)
-                messages = trim_to_budget(messages, budget)
+                token_budget = int(ctx_window * PROACTIVE_TRIM_TARGET)
+                messages = trim_to_budget(messages, token_budget)
 
             llm_kwargs: dict[str, Any] = {
                 "messages": messages,
@@ -620,8 +621,8 @@ class AgentLoop:
 
             # Reactive trim: context overflow → trim aggressively and retry once.
             if response.finish_reason == "error" and response.error_code == "context_overflow":
-                budget = int(ctx_window * REACTIVE_TRIM_TARGET)
-                trimmed = trim_to_budget(messages, budget)
+                token_budget = int(ctx_window * REACTIVE_TRIM_TARGET)
+                trimmed = trim_to_budget(messages, token_budget)
                 if len(trimmed) < len(messages):
                     logger.warning(
                         "context.overflow_recovery: trimmed {} → {} messages, retrying",
@@ -803,13 +804,16 @@ class AgentLoop:
 
                 task = asyncio.create_task(self._dispatch(msg))
                 self._active_tasks.setdefault(msg.session_key, []).append(task)
-                task.add_done_callback(
-                    lambda t, k=msg.session_key: (
-                        self._active_tasks.get(k, []) and self._active_tasks[k].remove(t)
-                        if t in self._active_tasks.get(k, [])
-                        else None
-                    )
-                )
+                def _task_done(t: asyncio.Task, k: str = msg.session_key) -> None:
+                    tasks_list = self._active_tasks.get(k, [])
+                    if t in tasks_list:
+                        tasks_list.remove(t)
+                    # Clean up interrupt event when no more tasks remain for this session
+                    if not tasks_list:
+                        self._active_tasks.pop(k, None)
+                        self._interrupt_events.pop(k, None)
+
+                task.add_done_callback(_task_done)
 
             # After dispatching, check shutdown flag and drain active tasks
             if self._shutting_down:
@@ -828,6 +832,7 @@ class AgentLoop:
 
     async def _handle_stop(self, msg: InboundMessage) -> None:
         """Cancel all active tasks and subagents for the session."""
+        self._interrupt_events.pop(msg.session_key, None)
         tasks = self._active_tasks.pop(msg.session_key, [])
         cancelled = sum(1 for t in tasks if not t.done() and t.cancel())
         for t in tasks:
@@ -1070,8 +1075,7 @@ class AgentLoop:
         budget: IterationBudget | None = None
         if self._max_iteration_budget is not None:
             budget = IterationBudget(self._max_iteration_budget)
-        # Pass budget to subagent manager so spawned tasks draw from the same pool.
-        self.subagents.budget = budget
+        self.subagents.set_budget(key, budget)
 
         final_content, _, all_msgs = await self._run_agent_loop(
             initial_messages,
