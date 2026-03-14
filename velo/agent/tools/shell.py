@@ -15,6 +15,99 @@ _WORKING_DIR_DENYLIST: frozenset[Path] = frozenset(
     for d in ["/etc", "/proc", "/sys", "/dev", "/root", "/boot", "/run"]
 )
 
+# Original 9 core patterns (always active)
+_CORE_DENY_PATTERNS: list[str] = [
+    r"\brm\s+-[rf]{1,2}\b",  # rm -r, rm -rf, rm -fr
+    r"\bdel\s+/[fq]\b",  # del /f, del /q
+    r"\brmdir\s+/s\b",  # rmdir /s
+    r"(?:^|[;&|]\s*)format\b",  # format (as standalone command only)
+    r"\b(mkfs|diskpart)\b",  # disk operations
+    r"\bdd\s+if=",  # dd
+    r">\s*/dev/sd",  # write to disk
+    r"\b(shutdown|reboot|poweroff)\b",  # system power
+    r":\(\)\s*\{.*\};\s*:",  # fork bomb
+]
+
+# Extended patterns (added when extended_safety=True)
+_EXTENDED_DENY_PATTERNS: list[str] = [
+    # Permissions
+    r"\bchmod\s+777\b",
+    r"\bchmod\s+-R\b",
+    r"\bchown\s+-R\s+root\b",
+    # SQL injection (matched against lowered command)
+    r"\bdrop\s+(table|database)\b",
+    r"\bdelete\s+from\s+\w+\s*;",  # DELETE FROM without WHERE
+    r"\btruncate\b",
+    # System config
+    r">\s*/etc/",
+    r"\bsystemctl\s+(stop|disable|mask)\b",
+    # Process killing
+    r"\bkill\s+-9\s+-1\b",
+    r"\bpkill\s+-9\b",
+    # Code execution vectors
+    r"\bcurl\b.*\|\s*(sh|bash)\b",
+    r"\bbash\s*<\s*\(curl\b",
+    r"\bpython\s+-[ce]\b",
+    r"\bbash\s+-c\b",
+    # Tee writes to sensitive paths
+    r"\btee\s+/etc/",
+    r"\btee\s+.*\.ssh/",
+    # Dangerous command chaining
+    r"\bxargs\s+rm\b",
+    r"\bfind\b.*-exec\s+rm\b",
+    r"\bfind\b.*-delete\b",
+    # Privilege escalation
+    r"\bsudo\b",
+    r"\bsu\s",
+    r"\bchroot\b",
+    # Network listeners
+    r"\bnc\s+-l\b",
+    r"\bsocat\b",
+]
+
+
+class CommandAllowlist:
+    """Per-session allowlist for pre-approved command patterns.
+
+    Checked before deny patterns in _guard_command(). Not auto-populated ---
+    requires explicit config or future channel-based approval.
+    """
+
+    def __init__(self) -> None:
+        """Initialize empty allowlist."""
+        self._allowed: dict[str, set[str]] = {}
+
+    def is_allowed(self, session_key: str, pattern: str) -> bool:
+        """Check if a pattern is allowed for this session.
+
+        Args:
+            session_key: Session identifier.
+            pattern: Command pattern to check.
+
+        Returns:
+            True if the pattern is in the session's allowlist.
+        """
+        return pattern in self._allowed.get(session_key, set())
+
+    def add(self, session_key: str, pattern: str) -> None:
+        """Add a pattern to the session's allowlist.
+
+        Args:
+            session_key: Session identifier.
+            pattern: Command pattern to allow.
+        """
+        if session_key not in self._allowed:
+            self._allowed[session_key] = set()
+        self._allowed[session_key].add(pattern)
+
+    def clear(self, session_key: str) -> None:
+        """Clear all allowed patterns for a session.
+
+        Args:
+            session_key: Session identifier.
+        """
+        self._allowed.pop(session_key, None)
+
 
 class ExecTool(Tool):
     """Tool to execute shell commands."""
@@ -27,23 +120,32 @@ class ExecTool(Tool):
         allow_patterns: list[str] | None = None,
         restrict_to_workspace: bool = False,
         path_append: str = "",
+        extended_safety: bool = True,
     ):
+        """Initialize ExecTool with safety configuration.
+
+        Args:
+            timeout: Max seconds before command is killed.
+            working_dir: Default working directory for commands.
+            deny_patterns: Custom deny patterns (overrides defaults).
+            allow_patterns: If set, only matching commands are allowed.
+            restrict_to_workspace: Block commands targeting paths outside cwd.
+            path_append: Extra PATH entries appended to env.
+            extended_safety: Use full deny list (True) or core-only (False).
+        """
         self.timeout = timeout
         self.working_dir = working_dir
-        self.deny_patterns = deny_patterns or [
-            r"\brm\s+-[rf]{1,2}\b",  # rm -r, rm -rf, rm -fr
-            r"\bdel\s+/[fq]\b",  # del /f, del /q
-            r"\brmdir\s+/s\b",  # rmdir /s
-            r"(?:^|[;&|]\s*)format\b",  # format (as standalone command only)
-            r"\b(mkfs|diskpart)\b",  # disk operations
-            r"\bdd\s+if=",  # dd
-            r">\s*/dev/sd",  # write to disk
-            r"\b(shutdown|reboot|poweroff)\b",  # system power
-            r":\(\)\s*\{.*\};\s*:",  # fork bomb
-        ]
+        if deny_patterns is not None:
+            self.deny_patterns = deny_patterns
+        elif extended_safety:
+            self.deny_patterns = _CORE_DENY_PATTERNS + _EXTENDED_DENY_PATTERNS
+        else:
+            self.deny_patterns = list(_CORE_DENY_PATTERNS)
         self.allow_patterns = allow_patterns or []
         self.restrict_to_workspace = restrict_to_workspace
         self.path_append = path_append
+        self._allowlist = CommandAllowlist()
+        self._current_session_key: str = ""
 
     @property
     def name(self) -> str:
@@ -123,8 +225,24 @@ class ExecTool(Tool):
         except Exception as e:
             return f"Error executing command: {str(e)}"
 
+    def set_session_key(self, session_key: str) -> None:
+        """Set the current session key for allowlist checks.
+
+        Args:
+            session_key: Session identifier for per-session allowlist lookups.
+        """
+        self._current_session_key = session_key
+
     def _guard_command(self, command: str, cwd: str) -> str | None:
-        """Best-effort safety guard for potentially destructive commands."""
+        """Best-effort safety guard for potentially destructive commands.
+
+        Args:
+            command: The shell command string to evaluate.
+            cwd: Current working directory for the command.
+
+        Returns:
+            Error message string if blocked, None if safe.
+        """
         cmd = command.strip()
         lower = cmd.lower()
 
@@ -138,6 +256,27 @@ class ExecTool(Tool):
                 return "Error: Command blocked by safety guard (restricted working directory)"
         except Exception:
             pass
+
+        # Symlink resolution: check extracted paths against denylist
+        for raw in self._extract_absolute_paths(cmd):
+            try:
+                resolved = Path(raw.strip()).resolve(strict=False)
+                if any(
+                    resolved == d or resolved.is_relative_to(d)
+                    for d in _WORKING_DIR_DENYLIST
+                ):
+                    return "Error: Command blocked by safety guard (symlink to restricted path)"
+            except Exception:
+                continue
+
+        # Per-session allowlist: skip deny check if command matches an allowed pattern
+        session_key = getattr(self, "_current_session_key", "")
+        if session_key and hasattr(self, "_allowlist"):
+            for pattern in self.deny_patterns:
+                if re.search(pattern, lower) and self._allowlist.is_allowed(
+                    session_key, cmd
+                ):
+                    return None
 
         for pattern in self.deny_patterns:
             if re.search(pattern, lower):
@@ -155,7 +294,8 @@ class ExecTool(Tool):
 
             for raw in self._extract_absolute_paths(cmd):
                 try:
-                    p = Path(raw.strip()).resolve()
+                    # Resolve symlinks to prevent escape via symlinked paths
+                    p = Path(raw.strip()).resolve(strict=False)
                 except Exception:
                     continue
                 if p.is_absolute() and cwd_path not in p.parents and p != cwd_path:

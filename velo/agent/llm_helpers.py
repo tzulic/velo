@@ -20,6 +20,7 @@ BASE_DELAY = 1.0  # seconds
 PROACTIVE_TRIM_THRESHOLD = 0.90  # Trim when > 90% of context window
 PROACTIVE_TRIM_TARGET = 0.70  # Trim down to 70%
 REACTIVE_TRIM_TARGET = 0.50  # Aggressive trim on overflow error
+COMPRESSION_THRESHOLD = 0.50  # Summarize at 50% context usage
 
 # Streaming buffer size
 STREAM_BUFFER_CHARS = 80  # Emit buffered text every N chars

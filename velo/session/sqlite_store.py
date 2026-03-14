@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -20,7 +21,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_consolidated INTEGER DEFAULT 0,
-    metadata TEXT
+    metadata TEXT,
+    parent_session_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -31,6 +33,7 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_key, idx);
+-- FTS5 full-text search on messages (created separately for graceful fallback)
 """
 
 
@@ -58,7 +61,37 @@ class SQLiteSessionStore:
         # WAL mode allows concurrent readers while a write is in progress.
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
+        # Migration: add parent_session_id column if missing (existing DBs).
+        try:
+            self._conn.execute("ALTER TABLE sessions ADD COLUMN parent_session_id TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         self._conn.commit()
+
+        # FTS5 full-text search table (graceful fallback if FTS5 not available)
+        self._fts5_available = True
+        try:
+            self._conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+                    content, session_key UNINDEXED, created_at UNINDEXED,
+                    tokenize='porter ascii'
+                )
+            """)
+            self._conn.commit()
+        except sqlite3.OperationalError:
+            self._fts5_available = False
+            # Fallback: plain table with LIKE queries
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS messages_fts_plain (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    content TEXT,
+                    session_key TEXT,
+                    created_at TEXT
+                )
+            """)
+            self._conn.commit()
+
+        self._fts_indexed = False
 
     def load(self, key: str) -> Session | None:
         """Load a session by key. Returns None if not found.
@@ -72,13 +105,14 @@ class SQLiteSessionStore:
         from velo.session.manager import Session
 
         row = self._conn.execute(
-            "SELECT created_at, updated_at, last_consolidated, metadata FROM sessions WHERE key = ?",
+            "SELECT created_at, updated_at, last_consolidated, metadata, parent_session_id"
+            " FROM sessions WHERE key = ?",
             (key,),
         ).fetchone()
         if row is None:
             return None
 
-        created_at_str, updated_at_str, last_consolidated, metadata_json = row
+        created_at_str, updated_at_str, last_consolidated, metadata_json, parent_session_id = row
         metadata: dict[str, Any] = json.loads(metadata_json) if metadata_json else {}
 
         msg_rows = self._conn.execute(
@@ -94,6 +128,7 @@ class SQLiteSessionStore:
             updated_at=datetime.fromisoformat(updated_at_str),
             metadata=metadata,
             last_consolidated=last_consolidated,
+            parent_session_id=parent_session_id,
         )
 
     def save(self, session: Session) -> None:
@@ -108,12 +143,14 @@ class SQLiteSessionStore:
         with self._conn:
             self._conn.execute(
                 """
-                INSERT INTO sessions (key, created_at, updated_at, last_consolidated, metadata)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO sessions (key, created_at, updated_at, last_consolidated, metadata,
+                                      parent_session_id)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(key) DO UPDATE SET
                     updated_at = excluded.updated_at,
                     last_consolidated = excluded.last_consolidated,
-                    metadata = excluded.metadata
+                    metadata = excluded.metadata,
+                    parent_session_id = excluded.parent_session_id
                 """,
                 (
                     session.key,
@@ -121,6 +158,7 @@ class SQLiteSessionStore:
                     session.updated_at.isoformat(),
                     session.last_consolidated,
                     json.dumps(session.metadata, ensure_ascii=False) if session.metadata else None,
+                    session.parent_session_id,
                 ),
             )
             # Append-only: only insert messages beyond what's already stored.
@@ -129,6 +167,17 @@ class SQLiteSessionStore:
                     "INSERT INTO messages (session_key, idx, data) VALUES (?, ?, ?)",
                     (session.key, idx, json.dumps(msg, ensure_ascii=False)),
                 )
+                # Index new messages for full-text search
+                role = msg.get("role", "")
+                if role in ("user", "assistant") and msg.get("content"):
+                    content_text = (
+                        msg["content"] if isinstance(msg["content"], str) else str(msg["content"])
+                    )
+                    self.index_message(
+                        session.key,
+                        content_text,
+                        msg.get("timestamp", session.updated_at.isoformat()),
+                    )
         self._persisted_counts[session.key] = len(session.messages)
 
     def list_sessions(self) -> list[dict[str, Any]]:
@@ -189,6 +238,158 @@ class SQLiteSessionStore:
             logger.info("session.migrated_to_sqlite: key={}, path={}", key, str(jsonl_path))
         except Exception as e:
             logger.warning("session.migrate_failed: key={}, error={}", key, str(e))
+
+    def index_message(self, session_key: str, content: str, created_at: str) -> None:
+        """Index a message for full-text search.
+
+        Args:
+            session_key: Session key (e.g. "telegram:123").
+            content: Message text content.
+            created_at: ISO timestamp string.
+        """
+        if self._fts5_available:
+            self._conn.execute(
+                "INSERT INTO messages_fts (content, session_key, created_at) VALUES (?, ?, ?)",
+                (content, session_key, created_at),
+            )
+        else:
+            self._conn.execute(
+                "INSERT INTO messages_fts_plain (content, session_key, created_at) VALUES (?, ?, ?)",
+                (content, session_key, created_at),
+            )
+
+    def search_messages(self, query: str, max_results: int = 10) -> list[dict[str, Any]]:
+        """Search messages using FTS5 with BM25 ranking.
+
+        Args:
+            query: Search keywords.
+            max_results: Maximum results to return.
+
+        Returns:
+            List of dicts with session_key, content (truncated to 500 chars),
+            created_at, and score.
+        """
+        self._ensure_fts_index()
+        sanitized = self._sanitize_fts5_query(query)
+        if not sanitized.strip():
+            return []
+
+        results: list[dict[str, Any]] = []
+
+        if self._fts5_available:
+            try:
+                rows = self._conn.execute(
+                    """
+                    SELECT session_key, content, created_at, bm25(messages_fts)
+                    FROM messages_fts
+                    WHERE messages_fts MATCH ?
+                    ORDER BY bm25(messages_fts) ASC
+                    LIMIT ?
+                    """,
+                    (sanitized, max_results),
+                ).fetchall()
+                for row in rows:
+                    results.append(
+                        {
+                            "session_key": row[0],
+                            "content": row[1][:500],
+                            "created_at": row[2],
+                            "score": row[3],
+                        }
+                    )
+            except sqlite3.OperationalError as e:
+                logger.warning("session.fts_search_failed: error={}", str(e))
+                return []
+        else:
+            # Fallback: LIKE-based search
+            like_pattern = f"%{sanitized}%"
+            rows = self._conn.execute(
+                """
+                SELECT session_key, content, created_at
+                FROM messages_fts_plain
+                WHERE content LIKE ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (like_pattern, max_results),
+            ).fetchall()
+            for row in rows:
+                results.append(
+                    {
+                        "session_key": row[0],
+                        "content": row[1][:500],
+                        "created_at": row[2],
+                        "score": 0.0,
+                    }
+                )
+
+        return results
+
+    @staticmethod
+    def _sanitize_fts5_query(query: str) -> str:
+        """Strip FTS5 operators that could crash the query.
+
+        Removes: +, *, {}, (), AND, OR, NOT as standalone operators.
+        Handles: unclosed quotes, leading wildcards.
+
+        Args:
+            query: Raw user query string.
+
+        Returns:
+            Cleaned query safe for FTS5 MATCH.
+        """
+        # Strip special FTS5 characters
+        cleaned = re.sub(r"[+{}()]", " ", query)
+        # Remove leading wildcards
+        cleaned = re.sub(r"^\*+", "", cleaned)
+        cleaned = re.sub(r"\s\*+", " ", cleaned)
+        # Balance unclosed quotes
+        if cleaned.count('"') % 2 != 0:
+            cleaned += '"'
+        # Remove standalone FTS5 boolean operators
+        cleaned = re.sub(r"\bAND\b", " ", cleaned)
+        cleaned = re.sub(r"\bOR\b", " ", cleaned)
+        cleaned = re.sub(r"\bNOT\b", " ", cleaned)
+        # Collapse whitespace
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        # Fallback: if empty after sanitization, use first word of original
+        if not cleaned:
+            first_word = re.sub(r"[^a-zA-Z0-9]", "", query.split()[0] if query.split() else "")
+            return first_word
+        return cleaned
+
+    def _ensure_fts_index(self) -> None:
+        """Lazily backfill FTS index from existing messages on first search."""
+        if self._fts_indexed:
+            return
+
+        # Check if FTS table already has rows
+        table = "messages_fts" if self._fts5_available else "messages_fts_plain"
+        count = self._conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]  # noqa: S608
+        if count > 0:
+            self._fts_indexed = True
+            return
+
+        # Backfill from messages table
+        rows = self._conn.execute(
+            "SELECT session_key, data FROM messages ORDER BY id ASC"
+        ).fetchall()
+        for session_key, data_json in rows:
+            try:
+                msg = json.loads(data_json)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            role = msg.get("role", "")
+            if role in ("user", "assistant") and msg.get("content"):
+                content_text = (
+                    msg["content"] if isinstance(msg["content"], str) else str(msg["content"])
+                )
+                timestamp = msg.get("timestamp", "")
+                self.index_message(session_key, content_text, timestamp)
+
+        self._conn.commit()
+        self._fts_indexed = True
+        logger.debug("session.fts_backfill_completed: rows={}", len(rows))
 
     def close(self) -> None:
         """Close the database connection."""

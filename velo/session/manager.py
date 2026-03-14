@@ -34,6 +34,7 @@ class Session:
     # Heartbeat deduplication: track last delivered heartbeat text and time
     last_heartbeat_text: str | None = None
     last_heartbeat_at: datetime | None = None
+    parent_session_id: str | None = None
 
     def add_message(self, role: str, content: str, **kwargs: Any) -> None:
         """Add a message to the session."""
@@ -200,9 +201,7 @@ class SessionManager:
 
             # Repair: if corrupt lines were found, back up and rewrite clean data
             if dropped > 0:
-                logger.warning(
-                    "session.repair: dropped {} corrupt lines from {}", dropped, key
-                )
+                logger.warning("session.repair: dropped {} corrupt lines from {}", dropped, key)
                 shutil.copy2(path, path.with_suffix(".bak"))
                 self._save_jsonl(session)
 
