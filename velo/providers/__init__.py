@@ -1,14 +1,12 @@
-"""LLM provider abstraction module."""
+"""LLM provider abstraction module.
 
-from velo.providers.azure_openai_provider import AzureOpenAIProvider
+Provider classes are imported lazily by the factory in cli/commands.py.
+Only base types are eagerly imported here to avoid loading all SDK deps at startup.
+"""
+
 from velo.providers.base import LLMProvider, LLMResponse
-from velo.providers.litellm_provider import LiteLLMProvider
-from velo.providers.openai_codex_provider import OpenAICodexProvider
 
 __all__ = [
     "LLMProvider",
     "LLMResponse",
-    "LiteLLMProvider",
-    "OpenAICodexProvider",
-    "AzureOpenAIProvider",
 ]

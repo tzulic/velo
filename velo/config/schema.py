@@ -282,6 +282,7 @@ class ProvidersConfig(Base):
     moonshot: ProviderConfig = Field(default_factory=ProviderConfig)
     minimax: ProviderConfig = Field(default_factory=ProviderConfig)
     mistral: ProviderConfig = Field(default_factory=ProviderConfig)
+    xai: ProviderConfig = Field(default_factory=ProviderConfig)  # xAI (Grok models)
     aihubmix: ProviderConfig = Field(default_factory=ProviderConfig)  # AiHubMix API gateway
     siliconflow: ProviderConfig = Field(default_factory=ProviderConfig)  # SiliconFlow (硅基流动)
     volcengine: ProviderConfig = Field(default_factory=ProviderConfig)  # VolcEngine (火山引擎)
@@ -453,18 +454,16 @@ class Config(BaseSettings):
         return p.api_key if p else None
 
     def get_api_base(self, model: str | None = None) -> str | None:
-        """Get API base URL for the given model. Applies default URLs for known gateways."""
+        """Get API base URL for the given model. Applies default URLs for known providers."""
         from velo.providers.registry import find_by_name
 
         p, name = self._match_provider(model)
         if p and p.api_base:
             return p.api_base
-        # Only gateways get a default api_base here. Standard providers
-        # (like Moonshot) set their base URL via env vars in _setup_env
-        # to avoid polluting the global litellm.api_base.
+        # Resolve default_api_base for ALL providers (gateways, DeepSeek, Groq, etc.)
         if name:
             spec = find_by_name(name)
-            if spec and spec.is_gateway and spec.default_api_base:
+            if spec and spec.default_api_base:
                 return spec.default_api_base
         return None
 

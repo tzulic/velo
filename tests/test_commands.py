@@ -7,7 +7,6 @@ from typer.testing import CliRunner
 
 from velo.cli.commands import app
 from velo.config.schema import Config
-from velo.providers.litellm_provider import LiteLLMProvider
 from velo.providers.openai_codex_provider import _strip_model_prefix
 from velo.providers.registry import find_by_model
 
@@ -120,14 +119,6 @@ def test_find_by_model_prefers_explicit_prefix_over_generic_codex_keyword():
 
     assert spec is not None
     assert spec.name == "github_copilot"
-
-
-def test_litellm_provider_canonicalizes_github_copilot_hyphen_prefix():
-    provider = LiteLLMProvider(default_model="github-copilot/gpt-5.3-codex")
-
-    resolved = provider._resolve_model("github-copilot/gpt-5.3-codex")
-
-    assert resolved == "github_copilot/gpt-5.3-codex"
 
 
 def test_openai_codex_strip_prefix_supports_hyphen_and_underscore():
