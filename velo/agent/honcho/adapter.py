@@ -22,9 +22,9 @@ class HonchoSessionState:
 
     Args:
         session_key: Velo session key (e.g. "telegram:12345").
-        user_peer: Honcho Peer for the human user (lazy-created).
-        ai_peer: Honcho Peer for the AI assistant (lazy-created).
-        session: Honcho Session object (lazy-created).
+        user_peer: Honcho Peer for the human user.
+        ai_peer: Honcho Peer for the AI assistant.
+        session: Honcho Session object.
         last_synced_idx: Index of last message synced to Honcho.
         context_cache: Prefetched context string for next turn.
     """
@@ -41,9 +41,9 @@ class HonchoSessionState:
 class HonchoAdapter:
     """Core bridge between Velo sessions and Honcho SDK.
 
-    Uses AsyncHoncho natively (no thread wrappers). All public methods
-    catch exceptions and return empty/False so the agent loop is never
-    disrupted by Honcho failures.
+    Uses Honcho sync client with .aio accessor for async operations.
+    All public methods catch exceptions and return empty/False so the
+    agent loop is never disrupted by Honcho failures.
 
     Args:
         config: Honcho configuration.
@@ -55,6 +55,7 @@ class HonchoAdapter:
     def __init__(self, config: HonchoConfig) -> None:
         self._config = config
         self._client: Any = None
+        self._aio: Any = None  # Honcho async accessor (client.aio)
         self._sessions: dict[str, HonchoSessionState] = {}
         self._lock = asyncio.Lock()
         self._current_session_key: str = ""
@@ -103,20 +104,21 @@ class HonchoAdapter:
         return self.pop_context_result(self._current_session_key)
 
     def _ensure_client(self) -> Any:
-        """Lazily create the AsyncHoncho client.
+        """Lazily create the Honcho client and its async accessor.
 
         Returns:
-            The AsyncHoncho client instance.
+            The Honcho .aio async accessor.
         """
-        if self._client is None:
+        if self._aio is None:
             try:
-                from honcho import AsyncHoncho
+                from honcho import Honcho
 
-                self._client = AsyncHoncho(
-                    workspace_id=self._config.workspace_id,
+                self._client = Honcho(
                     api_key=self._config.api_key,
+                    workspace_id=self._config.workspace_id,
                     base_url=self._config.api_base,
                 )
+                self._aio = self._client.aio
                 logger.info(
                     "honcho.client_created: workspace={}",
                     self._config.workspace_id,
@@ -126,7 +128,7 @@ class HonchoAdapter:
                     "honcho.import_failed: honcho-ai package not installed"
                 )
                 raise
-        return self._client
+        return self._aio
 
     # ------------------------------------------------------------------
     # Session lifecycle
@@ -135,14 +137,14 @@ class HonchoAdapter:
     async def get_or_create(self, key: str) -> HonchoSessionState:
         """Get or create a Honcho session state for the given Velo session key.
 
-        Peers and sessions are lazy-created on the Honcho side — no API
-        call until first use (e.g. add_messages or get_context).
+        Creates peer and session objects via the Honcho API (get-or-create
+        semantics on the server side).
 
         Args:
             key: Velo session key (e.g. "telegram:12345").
 
         Returns:
-            HonchoSessionState with lazy peers and session.
+            HonchoSessionState with peer and session objects.
         """
         if key in self._sessions:
             return self._sessions[key]
@@ -153,15 +155,13 @@ class HonchoAdapter:
                 return self._sessions[key]
 
             try:
-                client = self._ensure_client()
+                aio = self._ensure_client()
 
-                # Reason: Honcho peers/sessions are lazy — these calls
-                # don't hit the API until first use (add_messages, etc.)
-                user_peer = client.peer(name="user", observe_me=True)
-                ai_peer = client.peer(
-                    name=self._config.ai_peer, observe_me=True
-                )
-                session = user_peer.session(name=key)
+                # Reason: peer() and session() are async get-or-create calls.
+                # They create the resource on first call, return existing on subsequent.
+                user_peer = await aio.peer("user")
+                ai_peer = await aio.peer(self._config.ai_peer)
+                session = await aio.session(key)
 
                 state = HonchoSessionState(
                     session_key=key,
@@ -201,8 +201,10 @@ class HonchoAdapter:
             if not new_messages:
                 return
 
-            # Convert Velo messages to Honcho format
-            honcho_msgs = []
+            from honcho import MessageCreateParams
+
+            # Convert Velo messages to Honcho MessageCreateParams
+            honcho_msgs: list[Any] = []
             for msg in new_messages:
                 role = msg.get("role", "")
                 content = msg.get("content", "")
@@ -218,8 +220,13 @@ class HonchoAdapter:
                     content = " ".join(text_parts)
                 if not content.strip():
                     continue
+                # Reason: Honcho uses peer_id instead of role. Map user→"user",
+                # assistant→ai_peer name to identify message authors.
+                peer_id = "user" if role == "user" else self._config.ai_peer
                 honcho_msgs.append(
-                    {"role": role, "content": content[:10000]}
+                    MessageCreateParams(
+                        content=content[:10000], peer_id=peer_id
+                    )
                 )
 
             if not honcho_msgs:
@@ -229,7 +236,7 @@ class HonchoAdapter:
             # Batch in chunks of _MAX_BATCH_SIZE
             for i in range(0, len(honcho_msgs), self._MAX_BATCH_SIZE):
                 batch = honcho_msgs[i : i + self._MAX_BATCH_SIZE]
-                await state.session.add_messages(batch)
+                await state.session.aio.add_messages(batch)
 
             state.last_synced_idx = len(messages)
             logger.debug(
@@ -264,23 +271,21 @@ class HonchoAdapter:
     async def shutdown(self) -> None:
         """Close the Honcho client and clean up resources."""
         await self.flush_all()
-        if self._client is not None:
-            try:
-                await self._client.close()
-            except Exception:
-                logger.exception("honcho.client_close_failed")
-            self._client = None
+        # Reason: Honcho sync client doesn't have an async close method.
+        # Setting to None releases the httpx client for GC.
+        self._client = None
+        self._aio = None
         self._sessions.clear()
         logger.info("honcho.shutdown_completed")
 
     # ------------------------------------------------------------------
-    # Context (free, ~200ms) — session.get_context()
+    # Context (free, ~200ms) — session.aio.context()
     # ------------------------------------------------------------------
 
     async def prefetch_context(self, key: str) -> None:
         """Fire-and-forget context prefetch for the next turn.
 
-        Starts a background task that calls session.get_context() and
+        Starts a background task that calls session.aio.context() and
         caches the result. The next call to pop_context_result() returns
         the cached value with zero latency.
 
@@ -300,8 +305,9 @@ class HonchoAdapter:
                 kwargs: dict[str, Any] = {}
                 if self._config.context_tokens is not None:
                     kwargs["tokens"] = self._config.context_tokens
-                ctx = await state.session.get_context(**kwargs)
-                # Reason: get_context returns a Context object with .content
+                ctx = await state.session.aio.context(**kwargs)
+                # Reason: SessionContext has .content for the formatted string,
+                # but also structured fields. Use str() as fallback.
                 state.context_cache = (
                     ctx.content if hasattr(ctx, "content") else str(ctx)
                 )
@@ -359,21 +365,16 @@ class HonchoAdapter:
             if state.user_peer is None:
                 return "No Honcho session available for search."
 
-            results = await state.user_peer.search(query=query)
+            # Reason: peer.aio.search returns list[Message] with .content
+            results = await state.user_peer.aio.search(query=query)
             if not results:
                 return "No relevant context found."
 
-            # Reason: results may be a list of SearchResult objects or dicts
-            if isinstance(results, list):
-                parts = []
-                for r in results[:5]:
-                    content = (
-                        r.content if hasattr(r, "content") else str(r)
-                    )
-                    parts.append(f"- {content}")
-                return "\n".join(parts) if parts else "No relevant context found."
-
-            return str(results)
+            parts = []
+            for r in results[:5]:
+                content = r.content if hasattr(r, "content") else str(r)
+                parts.append(f"- {content}")
+            return "\n".join(parts) if parts else "No relevant context found."
 
         except Exception:
             logger.exception(
@@ -398,12 +399,12 @@ class HonchoAdapter:
             if state.user_peer is None:
                 return "No Honcho session available for query."
 
-            response = await state.user_peer.chat(query=query)
-            content = (
-                response.content
-                if hasattr(response, "content")
-                else str(response)
-            )
+            # Reason: peer.aio.chat() returns str | None directly
+            response = await state.user_peer.aio.chat(query=query)
+            if response is None:
+                return "No information available about this user yet."
+
+            content = str(response)
 
             # Truncate to configured max
             max_chars = self._config.dialectic_max_chars
@@ -433,8 +434,13 @@ class HonchoAdapter:
             if state.session is None:
                 return
 
-            await state.session.add_messages(
-                [{"role": "assistant", "content": f"[note] {content}"}]
+            from honcho import MessageCreateParams
+
+            await state.session.aio.add_messages(
+                MessageCreateParams(
+                    content=f"[note] {content}",
+                    peer_id=self._config.ai_peer,
+                )
             )
             logger.debug("honcho.note_added: key={}", key)
 
