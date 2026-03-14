@@ -244,6 +244,9 @@ def _build_fallback_provider(config: Config):
 def _make_provider(config: Config, model: str | None = None):
     """Create the appropriate LLM provider from config.
 
+    Dispatches by ``provider_type`` from the registry to the correct native SDK
+    provider class. Special cases: OpenAI Codex (OAuth), Claude CLI, Azure OpenAI.
+
     Args:
         config (Config): Loaded configuration.
         model (str | None): Override model name; defaults to config.agents.defaults.model.
@@ -251,15 +254,17 @@ def _make_provider(config: Config, model: str | None = None):
     Returns:
         LLMProvider: Configured provider instance.
     """
-    from velo.providers.azure_openai_provider import AzureOpenAIProvider
-    from velo.providers.openai_codex_provider import OpenAICodexProvider
+    from velo.providers.registry import find_by_name
 
     model = model or config.agents.defaults.model
     provider_name = config.get_provider_name(model)
     p = config.get_provider(model)
 
+    # --- Special-cased providers (non-standard auth or SDK) ----------------
+
     # OpenAI Codex (OAuth)
     if provider_name == "openai_codex" or model.startswith("openai-codex/"):
+        from velo.providers.openai_codex_provider import OpenAICodexProvider
         return OpenAICodexProvider(default_model=model)
 
     # Claude CLI: invokes the claude binary directly via Claude Max subscription
@@ -273,45 +278,65 @@ def _make_provider(config: Config, model: str | None = None):
             cli_path=cli_cfg.cli_path,
         )
 
-    # Custom: direct OpenAI-compatible endpoint, bypasses LiteLLM
-    from velo.providers.custom_provider import CustomProvider
-
-    if provider_name == "custom":
-        return CustomProvider(
-            api_key=p.api_key if p else "no-key",
-            api_base=config.get_api_base(model) or "http://localhost:8000/v1",
-            default_model=model,
-        )
-
-    # Azure OpenAI: direct Azure OpenAI endpoint with deployment name
+    # Azure OpenAI: direct Azure endpoint with deployment name
     if provider_name == "azure_openai":
+        from velo.providers.azure_openai_provider import AzureOpenAIProvider
         if not p or not p.api_key or not p.api_base:
             console.print("[red]Error: Azure OpenAI requires api_key and api_base.[/red]")
             console.print("Set them in ~/.velo/config.json under providers.azure_openai section")
             console.print("Use the model field to specify the deployment name.")
             raise typer.Exit(1)
-
         return AzureOpenAIProvider(
             api_key=p.api_key,
             api_base=p.api_base,
             default_model=model,
         )
 
-    from velo.providers.litellm_provider import LiteLLMProvider
-    from velo.providers.registry import find_by_name
+    # --- Standard providers: dispatch by provider_type ---------------------
 
-    spec = find_by_name(provider_name)
-    if not model.startswith("bedrock/") and not (p and p.api_key) and not (spec and spec.is_oauth):
+    spec = find_by_name(provider_name) if provider_name else None
+    if not (p and p.api_key) and not (spec and spec.is_oauth):
         console.print("[red]Error: No API key configured.[/red]")
         console.print("Set one in ~/.velo/config.json under providers section")
         raise typer.Exit(1)
 
-    return LiteLLMProvider(
-        api_key=p.api_key if p else None,
-        api_base=config.get_api_base(model),
+    api_key = p.api_key if p else ""
+    api_base = config.get_api_base(model)
+    extra_headers = p.extra_headers if p else None
+    provider_type = spec.provider_type if spec else "openai"
+
+    if provider_type == "anthropic":
+        from velo.providers.anthropic_provider import AnthropicProvider
+        return AnthropicProvider(
+            api_key=api_key,
+            api_base=api_base,
+            default_model=model,
+        )
+
+    if provider_type == "mistral":
+        from velo.providers.mistral_provider import MistralProvider
+        return MistralProvider(
+            api_key=api_key,
+            api_base=api_base,
+            default_model=model,
+        )
+
+    if provider_type == "gemini":
+        from velo.providers.gemini_provider import GeminiProvider
+        return GeminiProvider(
+            api_key=api_key,
+            api_base=api_base,
+            default_model=model,
+        )
+
+    # Default: OpenAI-compatible (openai, deepseek, groq, xai, openrouter, custom, etc.)
+    from velo.providers.openai_provider import OpenAIProvider
+    return OpenAIProvider(
+        api_key=api_key,
+        api_base=api_base,
         default_model=model,
-        extra_headers=p.extra_headers if p else None,
-        provider_name=provider_name,
+        extra_headers=extra_headers,
+        backend=provider_name or "openai",
     )
 
 
@@ -1104,25 +1129,9 @@ def _login_openai_codex() -> None:
 
 @_register_login("github_copilot")
 def _login_github_copilot() -> None:
-    import asyncio
-
-    console.print("[cyan]Starting GitHub Copilot device flow...[/cyan]\n")
-
-    async def _trigger():
-        from litellm import acompletion
-
-        await acompletion(
-            model="github_copilot/gpt-4o",
-            messages=[{"role": "user", "content": "hi"}],
-            max_tokens=1,
-        )
-
-    try:
-        asyncio.run(_trigger())
-        console.print("[green]✓ Authenticated with GitHub Copilot[/green]")
-    except Exception as e:
-        console.print(f"[red]Authentication error: {e}[/red]")
-        raise typer.Exit(1)
+    console.print("[yellow]GitHub Copilot login requires manual setup.[/yellow]")
+    console.print("Set your Copilot token in ~/.velo/config.json under providers.github_copilot.api_key")
+    console.print("See: https://github.com/settings/copilot for token management.")
 
 
 if __name__ == "__main__":

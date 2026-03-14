@@ -23,7 +23,7 @@ class AzureOpenAIProvider(LLMProvider):
     - Uses model field as Azure deployment name in URL path
     - Uses api-key header instead of Authorization Bearer
     - Uses max_completion_tokens instead of max_tokens
-    - Direct HTTP calls, bypasses LiteLLM
+    - Direct HTTP calls to Azure endpoint
     """
 
     def __init__(
