@@ -1,10 +1,12 @@
 """Subagent manager for background task execution."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import uuid
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from loguru import logger
 
@@ -17,6 +19,9 @@ from velo.bus.events import InboundMessage
 from velo.bus.queue import MessageBus
 from velo.config.schema import BrowseConfig, ExecToolConfig
 from velo.providers.base import LLMProvider
+
+if TYPE_CHECKING:
+    from velo.agent.budget import IterationBudget
 
 
 class SubagentManager:
@@ -36,8 +41,8 @@ class SubagentManager:
         reasoning_effort: str | None = None,
         parallel_api_key: str | None = None,
         web_proxy: str | None = None,
-        browse_config: "BrowseConfig | None" = None,
-        exec_config: "ExecToolConfig | None" = None,
+        browse_config: BrowseConfig | None = None,
+        exec_config: ExecToolConfig | None = None,
         restrict_to_workspace: bool = False,
         on_complete_callback: Callable[[dict[str, Any]], None] | None = None,
     ):
@@ -55,8 +60,22 @@ class SubagentManager:
         self.restrict_to_workspace = restrict_to_workspace
         # Optional callback invoked when a subagent completes (for event-driven heartbeat).
         self.on_complete_callback = on_complete_callback
+        # Per-session iteration budgets (parent + subagents draw from the same pool).
+        self._session_budgets: dict[str, IterationBudget | None] = {}
         self._running_tasks: dict[str, asyncio.Task[None]] = {}
         self._session_tasks: dict[str, set[str]] = {}  # session_key -> {task_id, ...}
+
+    def set_budget(self, session_key: str, budget: IterationBudget | None) -> None:
+        """Set the iteration budget for subagents spawned under a session.
+
+        Args:
+            session_key: Session key to associate the budget with.
+            budget: Shared budget, or None for unlimited.
+        """
+        if budget is not None:
+            self._session_budgets[session_key] = budget
+        else:
+            self._session_budgets.pop(session_key, None)
 
     async def spawn(
         self,
@@ -194,6 +213,17 @@ class SubagentManager:
 
                 while iteration < max_iterations:
                     iteration += 1
+
+                    # Shared budget pre-flight: stop if parent+subagents exhausted the pool
+                    session_key = f"{origin['channel']}:{origin['chat_id']}"
+                    _budget = self._session_budgets.get(session_key)
+                    if _budget is not None and not await _budget.consume():
+                        logger.info("subagent.budget_exhausted: id={}", task_id)
+                        final_result = (
+                            "Subagent stopped — iteration budget exhausted. "
+                            "Partial progress has been made."
+                        )
+                        break
 
                     response = await self.provider.chat(
                         messages=messages,

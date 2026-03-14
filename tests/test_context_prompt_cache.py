@@ -75,3 +75,88 @@ async def test_runtime_context_is_separate_untrusted_user_message(tmp_path) -> N
     assert "Channel: cli" in user_content
     assert "Chat ID: direct" in user_content
     assert "Return exactly: OK" in user_content
+
+
+@pytest.mark.asyncio
+async def test_system_prompt_cached_across_calls(tmp_path) -> None:
+    """System prompt should be identical object on repeated calls (cache hit)."""
+    workspace = _make_workspace(tmp_path)
+    builder = ContextBuilder(workspace)
+
+    prompt1 = await builder.build_system_prompt()
+    prompt2 = await builder.build_system_prompt()
+
+    assert prompt1 is prompt2  # Same object identity = cache hit
+
+
+@pytest.mark.asyncio
+async def test_cache_invalidation_resets(tmp_path) -> None:
+    """After invalidation, the prompt is rebuilt (different object)."""
+    workspace = _make_workspace(tmp_path)
+    builder = ContextBuilder(workspace)
+
+    prompt1 = await builder.build_system_prompt()
+    builder.invalidate_prompt_cache()
+    prompt2 = await builder.build_system_prompt()
+
+    # Content should be the same, but it's a freshly built string
+    assert prompt1 == prompt2
+    assert prompt1 is not prompt2
+
+
+@pytest.mark.asyncio
+async def test_honcho_not_in_system_prompt(tmp_path) -> None:
+    """Honcho context should NOT appear in the system prompt (it goes in runtime context)."""
+    from unittest.mock import MagicMock
+
+    workspace = _make_workspace(tmp_path)
+    builder = ContextBuilder(workspace)
+
+    mock_honcho = MagicMock()
+    mock_honcho.get_prefetched_context.return_value = "User likes cats"
+    builder.set_honcho(mock_honcho)
+
+    prompt = await builder.build_system_prompt()
+    assert "User likes cats" not in prompt
+    assert "Honcho" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_honcho_context_in_user_message(tmp_path) -> None:
+    """Honcho context should appear in the runtime context block of the user message."""
+    from unittest.mock import MagicMock
+
+    workspace = _make_workspace(tmp_path)
+    builder = ContextBuilder(workspace)
+
+    mock_honcho = MagicMock()
+    mock_honcho.get_prefetched_context.return_value = "User likes cats"
+    builder.set_honcho(mock_honcho)
+
+    messages = await builder.build_messages(
+        history=[],
+        current_message="Hello",
+        channel="cli",
+        chat_id="direct",
+    )
+
+    user_content = messages[-1]["content"]
+    assert "User likes cats" in user_content
+    assert ContextBuilder._RUNTIME_END_TAG in user_content
+
+
+@pytest.mark.asyncio
+async def test_runtime_end_tag_present(tmp_path) -> None:
+    """Runtime context block should end with the end tag marker."""
+    workspace = _make_workspace(tmp_path)
+    builder = ContextBuilder(workspace)
+
+    messages = await builder.build_messages(
+        history=[],
+        current_message="Test",
+        channel="cli",
+        chat_id="direct",
+    )
+
+    user_content = messages[-1]["content"]
+    assert ContextBuilder._RUNTIME_END_TAG in user_content

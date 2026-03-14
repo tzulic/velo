@@ -98,3 +98,39 @@ class TestProviderFallback:
         # if the error_code is in RETRYABLE_ERRORS — auth_error is NOT, so fallback stays inactive
         from velo.providers.errors import RETRYABLE_ERRORS
         assert "auth_error" not in RETRYABLE_ERRORS
+
+
+@pytest.mark.asyncio
+class TestStreamingFallback:
+    """Test fallback activation from the streaming path."""
+
+    async def test_streaming_error_activates_fallback(self, make_loop) -> None:
+        """When streaming returns a retryable error, fallback provider is activated."""
+        fallback = _make_mock_provider("fallback-model")
+        loop = make_loop(fallback_provider=fallback)
+
+        # Verify fallback is available but not yet activated
+        assert loop._fallback_provider is not None
+        assert loop._fallback_activated is False
+
+        # Simulate what the loop does: stream error → check retryable → activate fallback
+        stream_response = _error_response("server_error")
+        from velo.providers.errors import RETRYABLE_ERRORS
+        assert stream_response.error_code in RETRYABLE_ERRORS
+
+        activated = loop._try_activate_fallback()
+        assert activated is True
+        assert loop.provider is fallback
+
+    async def test_streaming_non_retryable_error_no_fallback(self, make_loop) -> None:
+        """Non-retryable streaming errors don't trigger fallback."""
+        fallback = _make_mock_provider("fallback-model")
+        loop = make_loop(fallback_provider=fallback)
+
+        stream_response = _error_response("auth_error")
+        from velo.providers.errors import RETRYABLE_ERRORS
+
+        # auth_error is not retryable, so the condition in the loop wouldn't trigger
+        assert stream_response.error_code not in RETRYABLE_ERRORS
+        # Fallback stays dormant
+        assert loop._fallback_activated is False
