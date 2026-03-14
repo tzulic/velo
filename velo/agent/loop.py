@@ -309,10 +309,11 @@ class AgentLoop:
             self.tools.register(ClarifyTool(clarify_callback))
 
         # Session search: register when SQLite backend is active
-        if self.sessions and self.sessions._sqlite is not None:
+        search_store = self.sessions.get_search_store() if self.sessions else None
+        if search_store is not None:
             from velo.agent.tools.session_search import SessionSearchTool
 
-            self.tools.register(SessionSearchTool(self.sessions._sqlite))
+            self.tools.register(SessionSearchTool(search_store))
 
     def _register_plugin_tools(self) -> None:
         """Register tools from all loaded plugins, respecting their deferred flag."""
@@ -493,20 +494,25 @@ class AgentLoop:
         total_tokens_in = 0
         total_tokens_out = 0
 
+        last_compressed_iter = -999  # Cooldown: don't re-compress within 3 iterations
+
         while iteration < self.max_iterations:
             iteration += 1
             # Refresh tool definitions each iteration so newly activated tools are included.
             tool_defs = self.tools.get_definitions()
 
             # Context compression: summarize middle messages at 50% usage.
+            # Cooldown prevents repeated LLM calls on consecutive iterations.
             est = estimate_tokens(messages)
-            if est > ctx_window * COMPRESSION_THRESHOLD:
-                messages, _summary = await compress_context(
+            if est > ctx_window * COMPRESSION_THRESHOLD and (iteration - last_compressed_iter) >= 3:
+                messages, _summary, est = await compress_context(
                     messages, self.provider,
                     self.subagent_model or self.model,
                     ctx_window,
+                    est_tokens=est,
                 )
-                est = estimate_tokens(messages)
+                if _summary:
+                    last_compressed_iter = iteration
 
             # Proactive context trim: if still close to the limit, trim before calling LLM.
             if est > ctx_window * PROACTIVE_TRIM_THRESHOLD:

@@ -14,6 +14,8 @@ _SUMMARY_PROMPT = (
     "Describe: actions taken, key results, decisions, constraints, user preferences,\n"
     "file paths, and next steps. Be factual and concise. Target ~500 tokens."
 )
+_SUMMARY_CONTENT_TRUNCATE = 800  # Max chars per message in the summary prompt
+_SUMMARY_MAX_TOKENS = 1024  # Max tokens for the summarization LLM call
 
 
 def _sanitize_tool_pairs(
@@ -80,8 +82,8 @@ def _build_summary_prompt(messages_to_summarize: list[dict[str, Any]]) -> list[d
         if msg.get("tool_call_id"):
             tool_info = f" [tool_result: {msg['tool_call_id'][:12]}...]"
         # Truncate long content for the summary prompt.
-        if len(content) > 800:
-            content = content[:800] + "..."
+        if len(content) > _SUMMARY_CONTENT_TRUNCATE:
+            content = content[:_SUMMARY_CONTENT_TRUNCATE] + "..."
         lines.append(f"[{role}]{tool_info}: {content}")
 
     conversation_text = "\n".join(lines)
@@ -99,7 +101,8 @@ async def compress_context(
     threshold: float = 0.50,
     protect_first: int = 3,
     protect_last: int = 4,
-) -> tuple[list[dict[str, Any]], str | None]:
+    est_tokens: int | None = None,
+) -> tuple[list[dict[str, Any]], str | None, int]:
     """Compress conversation context by summarizing middle messages.
 
     If the estimated token count of *messages* is below *context_window * threshold*,
@@ -115,16 +118,18 @@ async def compress_context(
         threshold: Fraction of context_window that triggers compression.
         protect_first: Number of leading messages to keep verbatim.
         protect_last: Number of trailing messages to keep verbatim.
+        est_tokens: Pre-computed token estimate (avoids redundant scan).
 
     Returns:
-        tuple: (compressed_messages, summary_text | None). summary_text is None
-            when no compression was needed or when the LLM call failed.
+        tuple: (compressed_messages, summary_text | None, est_tokens).
+            summary_text is None when no compression was needed or when
+            the LLM call failed. est_tokens is the post-compression estimate.
     """
-    est = estimate_tokens(messages)
+    est = est_tokens if est_tokens is not None else estimate_tokens(messages)
     budget = int(context_window * threshold)
 
     if est <= budget:
-        return messages, None
+        return messages, None, est
 
     # Not enough messages to compress.
     if len(messages) <= protect_first + protect_last:
@@ -133,12 +138,12 @@ async def compress_context(
             len(messages),
             protect_first + protect_last,
         )
-        return messages, None
+        return messages, None, est
 
     middle = messages[protect_first : len(messages) - protect_last]
 
     if not middle:
-        return messages, None
+        return messages, None, est
 
     logger.info(
         "context.compress_started: est={} tokens, threshold={}, middle={} msgs",
@@ -155,32 +160,24 @@ async def compress_context(
             messages=summary_messages,
             tools=None,
             model=model,
-            max_tokens=1024,
+            max_tokens=_SUMMARY_MAX_TOKENS,
             temperature=0.3,
         )
         summary_text = response.content
         if not summary_text:
             logger.warning("context.compress_empty_response: LLM returned no content")
-            return messages, None
+            return messages, None, est
     except Exception as exc:
         logger.warning("context.compress_failed: LLM error {}", exc)
-        return messages, None
+        return messages, None, est
 
     # Sanitize tool pairs in the protected segments.
     keep_indices: set[int] = set(range(protect_first))
     keep_indices.update(range(len(messages) - protect_last, len(messages)))
     sanitized_kept = _sanitize_tool_pairs(messages, keep_indices)
 
-    # Split sanitized messages back into head and tail portions.
-    # The sanitized list preserves order, so head items come first.
-    sanitized_head = [m for i, m in enumerate(messages) if i < protect_first and i in keep_indices]
-    sanitized_tail = [
-        m for i, m in enumerate(messages) if i >= len(messages) - protect_last and i in keep_indices
-    ]
-
-    # Reason: we use _sanitize_tool_pairs to rebuild, but for head/tail the
-    # indices always belong to keep_indices.  Re-derive from sanitized_kept to
-    # stay consistent with any orphan removals.
+    # Split sanitized output into head and tail. The sanitized list preserves
+    # order, so head items come first; count how many survived orphan removal.
     head_count = sum(1 for i in range(protect_first) if i in keep_indices)
     sanitized_head = sanitized_kept[:head_count]
     sanitized_tail = sanitized_kept[head_count:]
@@ -201,4 +198,4 @@ async def compress_context(
         new_est,
     )
 
-    return compressed, summary_text
+    return compressed, summary_text, new_est

@@ -11,6 +11,16 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+# Pre-compiled FTS5 sanitization patterns
+_RE_FTS_SPECIAL = re.compile(r"[+{}()]")
+_RE_LEADING_WILDCARD = re.compile(r"^\*+")
+_RE_SPACE_WILDCARD = re.compile(r"\s\*+")
+_RE_AND = re.compile(r"\bAND\b")
+_RE_OR = re.compile(r"\bOR\b")
+_RE_NOT = re.compile(r"\bNOT\b")
+_RE_WHITESPACE = re.compile(r"\s+")
+_RE_NON_ALNUM = re.compile(r"[^a-zA-Z0-9]")
+
 if TYPE_CHECKING:
     from velo.session.manager import Session
 
@@ -35,6 +45,24 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_key, idx);
 -- FTS5 full-text search on messages (created separately for graceful fallback)
 """
+
+
+def _extract_indexable_content(msg: dict[str, Any]) -> str | None:
+    """Extract text content from a message if it should be indexed.
+
+    Only user and assistant messages with non-empty content are indexable.
+
+    Args:
+        msg: A message dict with at least 'role' and 'content' keys.
+
+    Returns:
+        str | None: Text content to index, or None if not indexable.
+    """
+    role = msg.get("role", "")
+    if role not in ("user", "assistant") or not msg.get("content"):
+        return None
+    content = msg["content"]
+    return content if isinstance(content, str) else str(content)
 
 
 class SQLiteSessionStore:
@@ -168,11 +196,8 @@ class SQLiteSessionStore:
                     (session.key, idx, json.dumps(msg, ensure_ascii=False)),
                 )
                 # Index new messages for full-text search
-                role = msg.get("role", "")
-                if role in ("user", "assistant") and msg.get("content"):
-                    content_text = (
-                        msg["content"] if isinstance(msg["content"], str) else str(msg["content"])
-                    )
+                content_text = _extract_indexable_content(msg)
+                if content_text:
                     self.index_message(
                         session.key,
                         content_text,
@@ -339,22 +364,22 @@ class SQLiteSessionStore:
             Cleaned query safe for FTS5 MATCH.
         """
         # Strip special FTS5 characters
-        cleaned = re.sub(r"[+{}()]", " ", query)
+        cleaned = _RE_FTS_SPECIAL.sub(" ", query)
         # Remove leading wildcards
-        cleaned = re.sub(r"^\*+", "", cleaned)
-        cleaned = re.sub(r"\s\*+", " ", cleaned)
+        cleaned = _RE_LEADING_WILDCARD.sub("", cleaned)
+        cleaned = _RE_SPACE_WILDCARD.sub(" ", cleaned)
         # Balance unclosed quotes
         if cleaned.count('"') % 2 != 0:
             cleaned += '"'
         # Remove standalone FTS5 boolean operators
-        cleaned = re.sub(r"\bAND\b", " ", cleaned)
-        cleaned = re.sub(r"\bOR\b", " ", cleaned)
-        cleaned = re.sub(r"\bNOT\b", " ", cleaned)
+        cleaned = _RE_AND.sub(" ", cleaned)
+        cleaned = _RE_OR.sub(" ", cleaned)
+        cleaned = _RE_NOT.sub(" ", cleaned)
         # Collapse whitespace
-        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        cleaned = _RE_WHITESPACE.sub(" ", cleaned).strip()
         # Fallback: if empty after sanitization, use first word of original
         if not cleaned:
-            first_word = re.sub(r"[^a-zA-Z0-9]", "", query.split()[0] if query.split() else "")
+            first_word = _RE_NON_ALNUM.sub("", query.split()[0] if query.split() else "")
             return first_word
         return cleaned
 
@@ -370,26 +395,29 @@ class SQLiteSessionStore:
             self._fts_indexed = True
             return
 
-        # Backfill from messages table
-        rows = self._conn.execute(
+        # Backfill from messages table in batches to avoid loading all into memory
+        cursor = self._conn.execute(
             "SELECT session_key, data FROM messages ORDER BY id ASC"
-        ).fetchall()
-        for session_key, data_json in rows:
-            try:
-                msg = json.loads(data_json)
-            except (json.JSONDecodeError, TypeError):
-                continue
-            role = msg.get("role", "")
-            if role in ("user", "assistant") and msg.get("content"):
-                content_text = (
-                    msg["content"] if isinstance(msg["content"], str) else str(msg["content"])
-                )
-                timestamp = msg.get("timestamp", "")
-                self.index_message(session_key, content_text, timestamp)
+        )
+        indexed = 0
+        while True:
+            batch = cursor.fetchmany(500)
+            if not batch:
+                break
+            for session_key, data_json in batch:
+                try:
+                    msg = json.loads(data_json)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                content_text = _extract_indexable_content(msg)
+                if content_text:
+                    timestamp = msg.get("timestamp", "")
+                    self.index_message(session_key, content_text, timestamp)
+                    indexed += 1
 
         self._conn.commit()
         self._fts_indexed = True
-        logger.debug("session.fts_backfill_completed: rows={}", len(rows))
+        logger.debug("session.fts_backfill_completed: indexed={}", indexed)
 
     def close(self) -> None:
         """Close the database connection."""

@@ -234,9 +234,6 @@ class AgentDefaults(Base):
     reasoning_effort: str | None = None  # low / medium / high — enables LLM thinking mode
     context_window: int | None = None  # Override auto-detected context window (tokens)
     subagent_model: str | None = None  # Cheaper model for subagents; defaults to main model
-    compression_model: str | None = (
-        None  # Override model for compression; defaults to subagent_model
-    )
     fallback_model: str | None = (
         None  # Backup model if primary exhausts retries (e.g. "openrouter/anthropic/claude-3-5-haiku")
     )

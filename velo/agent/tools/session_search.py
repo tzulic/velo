@@ -71,7 +71,7 @@ class SessionSearchTool(Tool):
 
         lines: list[str] = [f"Found {len(results)} result(s) for '{query}':\n"]
         for i, hit in enumerate(results, start=1):
-            content_snippet = hit["content"][:500]
+            content_snippet = hit["content"]  # Already truncated by store
             lines.append(
                 f"{i}. [{hit['session_key']}] ({hit.get('created_at', 'unknown date')})\n"
                 f"   {content_snippet}\n"

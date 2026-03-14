@@ -77,28 +77,28 @@ class CommandAllowlist:
         """Initialize empty allowlist."""
         self._allowed: dict[str, set[str]] = {}
 
-    def is_allowed(self, session_key: str, pattern: str) -> bool:
-        """Check if a pattern is allowed for this session.
+    def is_allowed(self, session_key: str, command: str) -> bool:
+        """Check if a command is allowed for this session.
 
         Args:
             session_key: Session identifier.
-            pattern: Command pattern to check.
+            command: Exact command string to check.
 
         Returns:
-            True if the pattern is in the session's allowlist.
+            True if the command is in the session's allowlist.
         """
-        return pattern in self._allowed.get(session_key, set())
+        return command in self._allowed.get(session_key, set())
 
-    def add(self, session_key: str, pattern: str) -> None:
-        """Add a pattern to the session's allowlist.
+    def add(self, session_key: str, command: str) -> None:
+        """Add a command to the session's allowlist.
 
         Args:
             session_key: Session identifier.
-            pattern: Command pattern to allow.
+            command: Exact command string to allow.
         """
         if session_key not in self._allowed:
             self._allowed[session_key] = set()
-        self._allowed[session_key].add(pattern)
+        self._allowed[session_key].add(command)
 
     def clear(self, session_key: str) -> None:
         """Clear all allowed patterns for a session.
@@ -141,6 +141,7 @@ class ExecTool(Tool):
             self.deny_patterns = _CORE_DENY_PATTERNS + _EXTENDED_DENY_PATTERNS
         else:
             self.deny_patterns = list(_CORE_DENY_PATTERNS)
+        self._compiled_deny = [re.compile(p) for p in self.deny_patterns]
         self.allow_patterns = allow_patterns or []
         self.restrict_to_workspace = restrict_to_workspace
         self.path_append = path_append
@@ -269,17 +270,16 @@ class ExecTool(Tool):
             except Exception:
                 continue
 
-        # Per-session allowlist: skip deny check if command matches an allowed pattern
-        session_key = getattr(self, "_current_session_key", "")
-        if session_key and hasattr(self, "_allowlist"):
-            for pattern in self.deny_patterns:
-                if re.search(pattern, lower) and self._allowlist.is_allowed(
-                    session_key, cmd
+        # Per-session allowlist: skip deny check if command is pre-approved
+        if self._current_session_key:
+            for pat in self._compiled_deny:
+                if pat.search(lower) and self._allowlist.is_allowed(
+                    self._current_session_key, cmd
                 ):
                     return None
 
-        for pattern in self.deny_patterns:
-            if re.search(pattern, lower):
+        for pat in self._compiled_deny:
+            if pat.search(lower):
                 return "Error: Command blocked by safety guard (dangerous pattern detected)"
 
         if self.allow_patterns:

@@ -44,7 +44,7 @@ class TestNoCompressionUnderThreshold:
         messages = [_make_msg("user", f"short message {i}") for i in range(10)]
         provider = _make_provider()
 
-        result, summary = await compress_context(
+        result, summary, _est = await compress_context(
             messages=messages,
             provider=provider,
             model="test-model",
@@ -68,7 +68,7 @@ class TestProtectedMessagesPreserved:
         messages = [_make_msg("user", _pad(f"msg-{i}", 400)) for i in range(15)]
         provider = _make_provider("Compressed summary")
 
-        result, summary = await compress_context(
+        result, summary, _est = await compress_context(
             messages=messages,
             provider=provider,
             model="test-model",
@@ -119,7 +119,7 @@ class TestToolPairsNotSplit:
         messages = head + [tool_call_msg, tool_result_msg] + filler + tail
         provider = _make_provider("Tool pair summary")
 
-        result, summary = await compress_context(
+        result, summary, _est = await compress_context(
             messages=messages,
             provider=provider,
             model="test-model",
@@ -158,7 +158,7 @@ class TestSummaryInjectedWithPrefix:
         messages = [_make_msg("user", _pad(f"msg-{i}", 400)) for i in range(12)]
         provider = _make_provider("Actions taken and next steps")
 
-        result, summary = await compress_context(
+        result, summary, _est = await compress_context(
             messages=messages,
             provider=provider,
             model="test-model",
@@ -186,7 +186,7 @@ class TestFallbackOnLlmError:
         provider = AsyncMock()
         provider.chat = AsyncMock(side_effect=RuntimeError("API exploded"))
 
-        result, summary = await compress_context(
+        result, summary, _est = await compress_context(
             messages=messages,
             provider=provider,
             model="test-model",
@@ -206,7 +206,7 @@ class TestFallbackOnLlmError:
             return_value=LLMResponse(content=None, finish_reason="stop"),
         )
 
-        result, summary = await compress_context(
+        result, summary, _est = await compress_context(
             messages=messages,
             provider=provider,
             model="test-model",

@@ -96,6 +96,14 @@ class SessionManager:
             db_path = self.sessions_dir / "sessions.db"
             self._sqlite = SQLiteSessionStore(db_path)
 
+    def get_search_store(self) -> Any:
+        """Return the SQLite store for search, or None if not using SQLite backend.
+
+        Returns:
+            SQLiteSessionStore | None: The underlying SQLite store, if available.
+        """
+        return self._sqlite
+
     def _get_session_path(self, key: str) -> Path:
         """Get the file path for a session."""
         safe_key = safe_filename(key.replace(":", "_"))
