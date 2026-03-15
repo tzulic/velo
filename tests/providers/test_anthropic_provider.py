@@ -1,5 +1,7 @@
 """Tests for the native Anthropic provider."""
 
+from unittest.mock import patch
+
 import pytest
 
 from velo.providers.anthropic_provider import (
@@ -202,6 +204,48 @@ class TestStripPrefix:
 
     def test_no_prefix_unchanged(self) -> None:
         assert AnthropicProvider._strip_prefix("claude-sonnet-4-6") == "claude-sonnet-4-6"
+
+
+class TestOAuthTokenDetection:
+    """Test OAuth token detection and beta header configuration."""
+
+    @patch("anthropic.AsyncAnthropic")
+    def test_oauth_token_detected(self, _mock_client: object) -> None:
+        """OAuth tokens (sk-ant-oat prefix) set _is_oauth = True."""
+        provider = AnthropicProvider(api_key="sk-ant-oat01-abc123")
+        assert provider._is_oauth is True
+
+    @patch("anthropic.AsyncAnthropic")
+    def test_regular_api_key_not_flagged(self, _mock_client: object) -> None:
+        """Regular API keys are not flagged as OAuth."""
+        provider = AnthropicProvider(api_key="sk-ant-api03-xyz789")
+        assert provider._is_oauth is False
+
+    @patch("anthropic.AsyncAnthropic")
+    def test_oauth_beta_headers(self, mock_client: object) -> None:
+        """OAuth tokens include required beta headers in client construction."""
+        AnthropicProvider(api_key="sk-ant-oat01-abc123")
+        call_kwargs = mock_client.call_args[1]  # type: ignore[union-attr]
+        beta_header = call_kwargs["default_headers"]["anthropic-beta"]
+        assert "claude-code-20250219" in beta_header
+        assert "oauth-2025-04-20" in beta_header
+        assert "interleaved-thinking-2025-05-14" in beta_header
+
+    @patch("anthropic.AsyncAnthropic")
+    def test_oauth_uses_auth_token(self, mock_client: object) -> None:
+        """OAuth tokens are passed via auth_token, not api_key."""
+        AnthropicProvider(api_key="sk-ant-oat01-abc123")
+        call_kwargs = mock_client.call_args[1]  # type: ignore[union-attr]
+        assert call_kwargs["auth_token"] == "sk-ant-oat01-abc123"
+        assert "api_key" not in call_kwargs
+
+    @patch("anthropic.AsyncAnthropic")
+    def test_regular_key_uses_api_key(self, mock_client: object) -> None:
+        """Regular API keys are passed via api_key, not auth_token."""
+        AnthropicProvider(api_key="sk-ant-api03-xyz789")
+        call_kwargs = mock_client.call_args[1]  # type: ignore[union-attr]
+        assert call_kwargs["api_key"] == "sk-ant-api03-xyz789"
+        assert "auth_token" not in call_kwargs
 
 
 class TestBuildAssistantBlocks:

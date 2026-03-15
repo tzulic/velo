@@ -258,9 +258,17 @@ class DashboardChannel(BaseChannel):
     # ── Helpers ───────────────────────────────────────────────────────
 
     def _build_ws_url(self) -> str:
-        """Build the Supabase Realtime WebSocket URL from the project URL."""
-        # Extract project ref: "https://xyz.supabase.co" → "xyz"
+        """Build the Supabase Realtime WebSocket URL.
+
+        Supports two modes:
+        - Proxy mode: URL starts with ws:// or wss:// (direct WebSocket endpoint)
+        - Standard mode: Derive WS URL from Supabase project URL
+        """
         url = self.config.supabase_url.rstrip("/")
+        # Proxy mode: URL is already a WebSocket endpoint
+        if url.startswith("ws://") or url.startswith("wss://"):
+            return url
+        # Standard Supabase: derive WS URL from project URL
         host = url.split("//", 1)[-1]  # "xyz.supabase.co"
         project_ref = host.split(".")[0]  # "xyz"
         return f"wss://{project_ref}.supabase.co/realtime/v1/websocket"

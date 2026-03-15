@@ -52,12 +52,25 @@ class AnthropicProvider(LLMProvider):
         from anthropic import AsyncAnthropic
 
         self._default_model = default_model
-        self._client = AsyncAnthropic(
-            api_key=api_key,
-            base_url=api_base or None,
-            timeout=httpx.Timeout(timeout=900.0, connect=10.0),
-            default_headers={"anthropic-beta": "interleaved-thinking-2025-05-14"},
-        )
+        self._is_oauth = "sk-ant-oat" in api_key
+
+        # Reason: OAuth tokens (from Claude Max) require specific beta headers
+        # to authenticate against the Anthropic API.
+        betas = ["interleaved-thinking-2025-05-14"]
+        if self._is_oauth:
+            betas = ["claude-code-20250219", "oauth-2025-04-20"] + betas
+
+        client_kwargs: dict[str, Any] = {
+            "base_url": api_base or None,
+            "timeout": httpx.Timeout(timeout=900.0, connect=10.0),
+            "default_headers": {"anthropic-beta": ",".join(betas)},
+        }
+        if self._is_oauth:
+            client_kwargs["auth_token"] = api_key
+        else:
+            client_kwargs["api_key"] = api_key
+
+        self._client = AsyncAnthropic(**client_kwargs)
 
     # ------------------------------------------------------------------
     # Message conversion

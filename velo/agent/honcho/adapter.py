@@ -161,7 +161,14 @@ class HonchoAdapter:
                 # They create the resource on first call, return existing on subsequent.
                 user_peer = await aio.peer("user")
                 ai_peer = await aio.peer(self._config.ai_peer)
-                session = await aio.session(key)
+                # Reason: Honcho session IDs only allow [a-zA-Z0-9_-].
+                # Velo keys use colons (e.g. "telegram:12345"), so sanitize.
+                import re
+                honcho_id = re.sub(r"[^a-zA-Z0-9_-]", "-", key)
+                # Reason: passing metadata={} forces the SDK to make a server-side
+                # get-or-create call. Without it, session() only creates a local
+                # object and add_messages later fails with 500.
+                session = await aio.session(honcho_id, metadata={})
 
                 state = HonchoSessionState(
                     session_key=key,
