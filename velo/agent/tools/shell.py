@@ -170,12 +170,21 @@ class ExecTool(Tool):
         }
 
     async def execute(self, command: str, working_dir: str | None = None, **kwargs: Any) -> str:
+        # Catastrophic command guard (runs first, before deny patterns)
+        from velo.agent.security.command_guard import check_command
+        blocked = check_command(command)
+        if blocked:
+            import json
+            return json.dumps(blocked)
+
         cwd = working_dir or self.working_dir or os.getcwd()
         guard_error = self._guard_command(command, cwd)
         if guard_error:
             return guard_error
 
-        env = os.environ.copy()
+        from velo.agent.security.env_isolation import build_safe_env
+
+        env = build_safe_env()
         if self.path_append:
             env["PATH"] = env.get("PATH", "") + os.pathsep + self.path_append
 

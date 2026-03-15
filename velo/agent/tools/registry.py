@@ -3,6 +3,14 @@
 from typing import Any
 
 from velo.agent.tools.base import Tool
+
+# Tools restricted in group chat sessions
+_GROUP_RESTRICTED_TOOLS: frozenset[str] = frozenset({
+    "exec", "write_file", "edit_file", "skill_manage",
+    "skill_create", "skill_edit", "skill_patch", "skill_delete",
+    "cron", "cron_create", "cron_delete",
+    "spawn",
+})
 from velo.agent.tools.sanitize import sanitize_tool_result
 
 
@@ -141,9 +149,21 @@ class ToolRegistry:
         """Check if a tool is registered (active only)."""
         return name in self._tools
 
-    def get_definitions(self) -> list[dict[str, Any]]:
-        """Get all active tool definitions in OpenAI format."""
-        return [tool.to_schema() for tool in self._tools.values()]
+    def get_definitions(self, session_metadata: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Get all active tool definitions in OpenAI format.
+
+        Args:
+            session_metadata: Optional session context. If is_group=True,
+                dangerous tools are filtered out.
+
+        Returns:
+            List of tool schemas.
+        """
+        is_group = (session_metadata or {}).get("is_group", False)
+        tools = self._tools.values()
+        if is_group:
+            tools = [t for t in tools if t.name not in _GROUP_RESTRICTED_TOOLS]
+        return [tool.to_schema() for tool in tools]
 
     async def execute(self, name: str, params: dict[str, Any]) -> str:
         """Execute a tool by name with given parameters."""

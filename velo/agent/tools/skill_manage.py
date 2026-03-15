@@ -86,6 +86,10 @@ def _validate_skill_content(name: str | None, content: str) -> str | None:
         return err
     if threat := scan_content(content):
         return f"Content blocked by security scan: {threat}"
+    from velo.agent.security.skill_guard import scan_skill
+    guard_result = scan_skill(content, source="agent-created")
+    if not guard_result.allowed:
+        return f"Content blocked by skill guard: {', '.join(guard_result.findings)}"
     return None
 
 

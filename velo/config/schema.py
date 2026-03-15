@@ -382,6 +382,10 @@ class ExecToolConfig(Base):
     timeout: int = 60
     path_append: str = ""
     extended_safety: bool = True  # Use full 29-pattern deny list (False = original 9)
+    env_passthrough: list[str] = Field(
+        default_factory=list,
+        description="Additional env var names to pass to shell/MCP subprocesses",
+    )
 
 
 class MCPServerConfig(Base):

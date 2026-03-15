@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import re
 
+from velo.agent.security.patterns import redact_credentials
+
 # Regex: data URIs (data:...;base64,...) — greedy but stops at whitespace/quotes
 _DATA_URI_RE = re.compile(r"data:[^;]{1,60};base64,[A-Za-z0-9+/=\s]{200,}", re.ASCII)
 
@@ -50,13 +52,16 @@ def sanitize_tool_result(result: str, max_chars: int = 16_000) -> str:
     if not result:
         return result
 
+    # Step 1.5: strip credential patterns (runs on all inputs, even short ones)
+    cleaned = redact_credentials(result)
+
     # Reason: both regexes require 200+ char matches, so shorter strings can't contain base64.
     # Skip regex scanning entirely for short results that are also under the limit.
-    if len(result) < 200 and len(result) <= max_chars:
-        return result
+    if len(cleaned) < 200 and len(cleaned) <= max_chars:
+        return cleaned
 
     # Step 1: always strip base64 (it's pure waste for the LLM, even if under limit)
-    cleaned = _DATA_URI_RE.sub("[base64 data removed]", result)
+    cleaned = _DATA_URI_RE.sub("[base64 data removed]", cleaned)
     cleaned = _RAW_B64_RE.sub(
         lambda m: "[base64 blob removed]" if _is_likely_base64(m.group(0)) else m.group(0),
         cleaned,

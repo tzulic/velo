@@ -1,6 +1,7 @@
 """File system tools: read, write, edit."""
 
 import difflib
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,31 @@ from velo.agent.tools.base import Tool
 _DENYLIST: frozenset[Path] = frozenset(
     Path(d).resolve() for d in ["/etc", "/proc", "/sys", "/dev", "/root", "/boot", "/run"]
 )
+
+# File-level denylist: specific files that must never be read/written.
+# Uses fnmatch glob patterns against resolved absolute paths.
+_FILE_DENYLIST_PATTERNS: tuple[str, ...] = (
+    "*/config.json",       # Velo config with channel tokens
+    "*/.env",              # Environment files
+    "*/.env.*",            # .env.local, .env.production, etc.
+    "*credentials*",       # Any credentials file
+    "*/secrets/*",         # Secrets directories
+    "*.key",               # Private keys
+    "*.pem",               # Certificates/keys
+)
+
+
+def _is_file_denied(resolved: Path) -> bool:
+    """Check if a resolved path matches file-level deny patterns.
+
+    Args:
+        resolved: Fully resolved absolute path.
+
+    Returns:
+        True if the file should be blocked.
+    """
+    path_str = str(resolved)
+    return any(fnmatch(path_str, pat) for pat in _FILE_DENYLIST_PATTERNS)
 
 
 def _resolve_path(
@@ -41,6 +67,10 @@ def _resolve_path(
     # Denylist: block known sensitive system directories
     if any(resolved == d or resolved.is_relative_to(d) for d in _DENYLIST):
         raise PermissionError(f"Path {path} is in a restricted system directory")
+
+    # File-level denylist: block specific sensitive files
+    if _is_file_denied(resolved):
+        raise PermissionError(f"Path {path} matches a restricted file pattern")
 
     if allowed_dir:
         try:
