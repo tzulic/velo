@@ -1,4 +1,4 @@
-"""Tests for Honcho tools (search, query, note)."""
+"""Tests for Honcho tools (search, query, profile, conclude)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
 
-from velo.agent.honcho.tools import HonchoNoteTool, HonchoQueryTool, HonchoSearchTool
+from velo.agent.honcho.tools import (
+    HonchoConcludeTool,
+    HonchoProfileTool,
+    HonchoQueryTool,
+    HonchoSearchTool,
+)
 
 
 @pytest.fixture
@@ -16,6 +21,8 @@ def mock_adapter():
     type(adapter).current_session_key = PropertyMock(return_value="telegram:123")
     adapter.search_context = AsyncMock(return_value="- User likes Python")
     adapter.dialectic_query = AsyncMock(return_value="The user is a developer.")
+    adapter.get_peer_card = AsyncMock(return_value="Name: Alice\nTimezone: GMT+1")
+    adapter.add_conclusion = AsyncMock()
     adapter.add_note = AsyncMock()
     return adapter
 
@@ -75,7 +82,16 @@ class TestHonchoQueryTool:
 
         assert "developer" in result
         mock_adapter.dialectic_query.assert_called_once_with(
-            "telegram:123", "What does the user do?"
+            "telegram:123", "What does the user do?", peer="user"
+        )
+
+    async def test_execute_with_ai_peer(self, mock_adapter):
+        """Query tool passes peer parameter to adapter."""
+        tool = HonchoQueryTool(mock_adapter)
+        await tool.execute(query="What is my personality?", peer="ai")
+
+        mock_adapter.dialectic_query.assert_called_once_with(
+            "telegram:123", "What is my personality?", peer="ai"
         )
 
     async def test_execute_no_session_returns_error(self, mock_adapter_no_session):
@@ -84,6 +100,15 @@ class TestHonchoQueryTool:
         result = await tool.execute(query="test")
 
         assert "error" in result
+
+    def test_schema_has_peer_enum(self, mock_adapter):
+        """Tool schema includes peer parameter with enum."""
+        tool = HonchoQueryTool(mock_adapter)
+        schema = tool.to_schema()
+
+        params = schema["function"]["parameters"]
+        assert "peer" in params["properties"]
+        assert params["properties"]["peer"]["enum"] == ["user", "ai"]
 
     def test_schema_has_required_query(self, mock_adapter):
         """Tool schema requires query parameter."""
@@ -94,39 +119,74 @@ class TestHonchoQueryTool:
         assert "query" in schema["function"]["parameters"]["required"]
 
 
-class TestHonchoNoteTool:
-    """Tests for HonchoNoteTool."""
+class TestHonchoProfileTool:
+    """Tests for HonchoProfileTool."""
 
-    async def test_execute_records_note(self, mock_adapter):
-        """Note tool calls adapter add_note."""
-        tool = HonchoNoteTool(mock_adapter)
-        result = await tool.execute(content="User prefers dark mode")
+    async def test_execute_returns_profile(self, mock_adapter):
+        """Profile tool returns peer card content."""
+        tool = HonchoProfileTool(mock_adapter)
+        result = await tool.execute()
 
-        assert "recorded" in result.lower()
-        mock_adapter.add_note.assert_called_once_with("telegram:123", "User prefers dark mode")
+        assert "Alice" in result
+        assert "GMT+1" in result
+        mock_adapter.get_peer_card.assert_called_once_with("telegram:123")
+
+    async def test_execute_empty_profile(self, mock_adapter):
+        """Profile tool returns fallback when no card available."""
+        mock_adapter.get_peer_card.return_value = ""
+        tool = HonchoProfileTool(mock_adapter)
+        result = await tool.execute()
+
+        assert "No user profile" in result
 
     async def test_execute_no_session_returns_error(self, mock_adapter_no_session):
-        """Note tool returns error JSON when no session key."""
-        tool = HonchoNoteTool(mock_adapter_no_session)
-        result = await tool.execute(content="test note")
+        """Profile tool returns error JSON when no session key."""
+        tool = HonchoProfileTool(mock_adapter_no_session)
+        result = await tool.execute()
 
         assert "error" in result
 
-    def test_schema_has_required_content(self, mock_adapter):
-        """Tool schema requires content parameter."""
-        tool = HonchoNoteTool(mock_adapter)
+    def test_schema_has_no_required_params(self, mock_adapter):
+        """Profile tool has no required parameters."""
+        tool = HonchoProfileTool(mock_adapter)
         schema = tool.to_schema()
 
-        assert schema["function"]["name"] == "honcho_note"
-        assert "content" in schema["function"]["parameters"]["required"]
+        assert schema["function"]["name"] == "honcho_profile"
+        assert schema["function"]["parameters"]["required"] == []
+
+
+class TestHonchoConcludeTool:
+    """Tests for HonchoConcludeTool."""
+
+    async def test_execute_records_conclusion(self, mock_adapter):
+        """Conclude tool calls adapter add_conclusion."""
+        tool = HonchoConcludeTool(mock_adapter)
+        result = await tool.execute(conclusion="User prefers dark mode")
+
+        assert "recorded" in result.lower() or "updated" in result.lower()
+        mock_adapter.add_conclusion.assert_called_once_with(
+            "telegram:123", "User prefers dark mode"
+        )
+
+    async def test_execute_no_session_returns_error(self, mock_adapter_no_session):
+        """Conclude tool returns error JSON when no session key."""
+        tool = HonchoConcludeTool(mock_adapter_no_session)
+        result = await tool.execute(conclusion="test")
+
+        assert "error" in result
+
+    def test_schema_has_required_conclusion(self, mock_adapter):
+        """Tool schema requires conclusion parameter."""
+        tool = HonchoConcludeTool(mock_adapter)
+        schema = tool.to_schema()
+
+        assert schema["function"]["name"] == "honcho_conclude"
+        assert "conclusion" in schema["function"]["parameters"]["required"]
 
     async def test_execute_with_adapter_error(self, mock_adapter):
-        """Note tool handles adapter errors gracefully."""
-        mock_adapter.add_note.side_effect = RuntimeError("API error")
-        tool = HonchoNoteTool(mock_adapter)
+        """Conclude tool propagates adapter errors (adapter catches internally)."""
+        mock_adapter.add_conclusion.side_effect = RuntimeError("API error")
+        tool = HonchoConcludeTool(mock_adapter)
 
-        # The tool itself doesn't catch — the adapter does.
-        # But add_note raising is unusual (adapter catches internally).
-        # Verify the tool at least calls add_note.
         with pytest.raises(RuntimeError):
-            await tool.execute(content="test")
+            await tool.execute(conclusion="test")

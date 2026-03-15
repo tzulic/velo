@@ -42,3 +42,6 @@ class HonchoConfig(BaseModel):
     context_tokens: int | None = Field(default=None, description="Token budget for get_context()")
     dialectic_reasoning_level: str = "low"
     dialectic_max_chars: int = 600
+    observe_peers: bool = True
+    seed_identity: bool = True
+    sync_peer_card_to_user_md: bool = True

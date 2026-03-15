@@ -1,6 +1,6 @@
-"""Honcho tools: search, query, and note tools for the agent.
+"""Honcho tools: search, query, profile, and conclude tools for the agent.
 
-Three tools following the velo/agent/tools/base.py ABC pattern.
+Tools following the velo/agent/tools/base.py ABC pattern.
 Each takes a HonchoAdapter reference and reads the current session
 key from the adapter at execution time.
 """
@@ -66,15 +66,15 @@ class HonchoSearchTool(Tool):
 
 
 class HonchoQueryTool(Tool):
-    """Ask Honcho about the user via dialectic reasoning.
+    """Ask Honcho about the user or the AI assistant via dialectic reasoning.
 
     Costs $0.001-$0.50 per query. Use sparingly for complex questions
-    about the user's preferences, patterns, or history.
+    about preferences, patterns, or history.
     """
 
     name = "honcho_query"
     description = (
-        "Ask a question about the user based on their conversation history and profile. "
+        "Ask a question about the user or AI assistant based on conversation history and profile. "
         "Use for deeper questions like 'What topics does this user care about?' or "
         "'What is the user's communication style?'. Costs a small amount per query."
     )
@@ -83,7 +83,12 @@ class HonchoQueryTool(Tool):
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Question about the user to ask the user-modeling system.",
+                "description": "Question about the user or AI assistant.",
+            },
+            "peer": {
+                "type": "string",
+                "enum": ["user", "ai"],
+                "description": "Which peer to query. 'user' for the human, 'ai' for the assistant. Default: user.",
             },
         },
         "required": ["query"],
@@ -97,60 +102,105 @@ class HonchoQueryTool(Tool):
         """
         self._adapter = adapter
 
-    async def execute(self, query: str, **kwargs: Any) -> str:
+    async def execute(self, query: str, peer: str = "user", **kwargs: Any) -> str:
         """Execute dialectic query against Honcho.
 
         Args:
-            query: Question about the user.
+            query: Question about the user or AI assistant.
+            peer: Which peer to query — "user" or "ai". Default: "user".
             **kwargs: Additional parameters (ignored).
 
         Returns:
-            Honcho's response about the user.
+            Honcho's response.
         """
         key = self._adapter.current_session_key
         if not key:
             return json.dumps({"error": "No active session for Honcho query."})
 
-        return await self._adapter.dialectic_query(key, query)
+        return await self._adapter.dialectic_query(key, query, peer=peer)
 
 
-class HonchoNoteTool(Tool):
-    """Record a fact or observation about the user.
+class HonchoProfileTool(Tool):
+    """Get the user's profile — curated facts from past conversations.
 
-    Triggers Honcho's background reasoning pipeline to update the user's
-    peer card. Use when you learn something important about the user.
+    Free and instant. Returns the peer card which is Honcho's accumulated
+    understanding of the user.
     """
 
-    name = "honcho_note"
+    name = "honcho_profile"
     description = (
-        "Record an important observation or fact about the user. "
-        "Examples: their timezone, preferred communication style, a project they're working on, "
-        "or a preference they expressed. Triggers background processing to update the user model."
+        "Get the user's profile — curated facts from past conversations. "
+        "Free, instant, no LLM cost. Returns identity, preferences, goals, "
+        "communication style, and other learned facts."
     )
     parameters = {
         "type": "object",
-        "properties": {
-            "content": {
-                "type": "string",
-                "description": "The fact or observation to record about the user.",
-            },
-        },
-        "required": ["content"],
+        "properties": {},
+        "required": [],
     }
 
     def __init__(self, adapter: HonchoAdapter) -> None:
-        """Initialize note tool.
+        """Initialize profile tool.
 
         Args:
             adapter: HonchoAdapter instance (provides current session key).
         """
         self._adapter = adapter
 
-    async def execute(self, content: str, **kwargs: Any) -> str:
-        """Record a note about the user in Honcho.
+    async def execute(self, **kwargs: Any) -> str:
+        """Get the user's peer card from Honcho.
 
         Args:
-            content: Fact or observation to record.
+            **kwargs: Additional parameters (ignored).
+
+        Returns:
+            User profile text.
+        """
+        key = self._adapter.current_session_key
+        if not key:
+            return json.dumps({"error": "No active session for Honcho profile."})
+
+        result = await self._adapter.get_peer_card(key)
+        return result if result else "No user profile available yet."
+
+
+class HonchoConcludeTool(Tool):
+    """Record a structured conclusion about the user that directly updates their profile.
+
+    Use when you learn preferences, timezone, goals, skills, or communication style.
+    Stronger than notes — directly updates the peer card.
+    """
+
+    name = "honcho_conclude"
+    description = (
+        "Record a structured conclusion about the user that directly updates their profile. "
+        "Use when you learn preferences, timezone, goals, skills, or communication style. "
+        "Triggers immediate profile update."
+    )
+    parameters = {
+        "type": "object",
+        "properties": {
+            "conclusion": {
+                "type": "string",
+                "description": "A structured fact about the user (e.g. 'User prefers dark mode and uses GMT+1').",
+            },
+        },
+        "required": ["conclusion"],
+    }
+
+    def __init__(self, adapter: HonchoAdapter) -> None:
+        """Initialize conclude tool.
+
+        Args:
+            adapter: HonchoAdapter instance (provides current session key).
+        """
+        self._adapter = adapter
+
+    async def execute(self, conclusion: str, **kwargs: Any) -> str:
+        """Record a conclusion about the user in Honcho.
+
+        Args:
+            conclusion: Structured fact about the user.
             **kwargs: Additional parameters (ignored).
 
         Returns:
@@ -158,7 +208,7 @@ class HonchoNoteTool(Tool):
         """
         key = self._adapter.current_session_key
         if not key:
-            return json.dumps({"error": "No active session for Honcho note."})
+            return json.dumps({"error": "No active session for Honcho conclude."})
 
-        await self._adapter.add_note(key, content)
-        return "Note recorded. It will be incorporated into the user model."
+        await self._adapter.add_conclusion(key, conclusion)
+        return "Conclusion recorded. The user's profile will be updated."

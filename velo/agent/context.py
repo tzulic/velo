@@ -175,7 +175,11 @@ Your workspace is at: {workspace_path}
 - If a tool call fails, analyze the error before retrying with a different approach.
 - Ask for clarification when the request is ambiguous.
 
-Reply directly with text for conversations. Only use the 'message' tool to send to a specific chat channel."""
+Reply directly with text for conversations. Only use the 'message' tool to send to a specific chat channel.
+
+## Skill Self-Improvement
+After completing a complex task (5+ tool calls), consider saving reusable procedures
+as skills via skill_manage. Only create skills for genuinely recurring patterns."""
 
     @staticmethod
     def _build_runtime_context(channel: str | None, chat_id: str | None) -> str:
@@ -228,7 +232,7 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
         if self._honcho:
             honcho_ctx = self._honcho.get_prefetched_context()
             if honcho_ctx:
-                runtime_ctx += f"\nUser Context (Honcho): {honcho_ctx}"
+                runtime_ctx += f"\nUser Profile & Context (primary):\n{honcho_ctx}"
         # Reason: nudge is appended to runtime_ctx so _save_turn strips it from session storage.
         if memory_nudge:
             runtime_ctx += f"\n{memory_nudge}"

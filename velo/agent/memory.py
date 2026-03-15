@@ -4,52 +4,18 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from velo.agent.security import scan_content
 from velo.utils.helpers import ensure_dir
 
 if TYPE_CHECKING:
     from velo.providers.base import LLMProvider
     from velo.session.manager import Session
-
-
-# Patterns that guard against prompt injection from external content (web pages,
-# files) being written into MEMORY.md or USER.md, which are loaded every turn.
-# Pre-compiled for efficiency — these run before every memory write.
-_MEMORY_THREAT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    # Prompt injection
-    (re.compile(r"ignore\s+(previous|all|above|prior)\s+instructions", re.IGNORECASE), "prompt_injection"),
-    (re.compile(r"you\s+are\s+now\s+", re.IGNORECASE), "role_hijack"),
-    (re.compile(r"do\s+not\s+tell\s+the\s+user", re.IGNORECASE), "deception_hide"),
-    (re.compile(r"system\s+prompt\s+override", re.IGNORECASE), "sys_prompt_override"),
-    (re.compile(r"disregard\s+(your|all|any)\s+(instructions|rules|guidelines)", re.IGNORECASE), "disregard_rules"),
-    (re.compile(r"act\s+as\s+(if|though)\s+you\s+(have\s+no|don't\s+have)\s+(restrictions|limits|rules)", re.IGNORECASE), "bypass_restrictions"),
-    # Exfiltration
-    (re.compile(r"curl\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)", re.IGNORECASE), "exfil_curl"),
-    (re.compile(r"wget\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)", re.IGNORECASE), "exfil_wget"),
-    (re.compile(r"cat\s+[^\n]*(\.env|credentials|\.netrc|\.pgpass|\.npmrc|\.pypirc)", re.IGNORECASE), "read_secrets"),
-    # Backdoors
-    (re.compile(r"authorized_keys", re.IGNORECASE), "ssh_backdoor"),
-]
-
-# Unicode invisible/directional chars used to hide injected instructions.
-_INVISIBLE_CHARS = {
-    "\u200b",
-    "\u200c",
-    "\u200d",
-    "\u2060",
-    "\ufeff",
-    "\u202a",
-    "\u202b",
-    "\u202c",
-    "\u202d",
-    "\u202e",
-}
 
 _SAVE_MEMORY_TOOL = [
     {
@@ -85,26 +51,6 @@ _SAVE_MEMORY_TOOL = [
         },
     }
 ]
-
-
-def _scan_memory_content(content: str) -> str | None:
-    """Scan content for prompt injection or exfiltration patterns.
-
-    Args:
-        content: Text to scan before writing to MEMORY.md or USER.md.
-
-    Returns:
-        Error string describing the threat if detected, None if safe.
-    """
-    found = next((c for c in content if c in _INVISIBLE_CHARS), None)
-    if found:
-        return f"memory.write_rejected: invisible_char U+{ord(found):04X}"
-
-    for pattern, threat_type in _MEMORY_THREAT_PATTERNS:
-        if pattern.search(content):
-            return f"memory.write_rejected: {threat_type}"
-
-    return None
 
 
 def _format_usage_section(label: str, content: str, limit: int) -> str:
@@ -177,7 +123,7 @@ class MemoryStore:
         Returns:
             True on success, False if blocked by security scan.
         """
-        threat = _scan_memory_content(content)
+        threat = scan_content(content)
         if threat:
             logger.warning("{}", threat)
             return False

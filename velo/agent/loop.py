@@ -286,13 +286,26 @@ class AgentLoop:
         self._honcho: Any = None
         if honcho_config and honcho_config.enabled and honcho_config.api_key:
             from velo.agent.honcho.adapter import HonchoAdapter
-            from velo.agent.honcho.tools import HonchoNoteTool, HonchoQueryTool, HonchoSearchTool
+            from velo.agent.honcho.tools import (
+                HonchoConcludeTool,
+                HonchoProfileTool,
+                HonchoQueryTool,
+                HonchoSearchTool,
+            )
 
-            self._honcho = HonchoAdapter(honcho_config)
+            self._honcho = HonchoAdapter(honcho_config, workspace)
             self.context.set_honcho(self._honcho)
             self.tools.register(HonchoSearchTool(self._honcho))
             self.tools.register(HonchoQueryTool(self._honcho))
-            self.tools.register(HonchoNoteTool(self._honcho))
+            self.tools.register(HonchoProfileTool(self._honcho))
+            self.tools.register(HonchoConcludeTool(self._honcho))
+
+        # Skill self-improvement tool
+        from velo.agent.tools.skill_manage import SkillManageTool
+
+        self.tools.register(
+            SkillManageTool(workspace, invalidate_callback=self.context.invalidate_prompt_cache)
+        )
 
     def _register_default_tools(
         self,

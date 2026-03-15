@@ -37,8 +37,8 @@ def bus():
 class TestHonchoEnabled:
     """Tests for AgentLoop with Honcho enabled."""
 
-    def test_registers_three_tools_when_enabled(self, bus, mock_provider, workspace):
-        """AgentLoop registers honcho_search, honcho_query, honcho_note when Honcho is configured."""
+    def test_registers_honcho_tools_when_enabled(self, bus, mock_provider, workspace):
+        """AgentLoop registers honcho tools when Honcho is configured."""
         honcho_config = HonchoConfig(
             enabled=True, api_key="test-key", workspace_id="test-ws"
         )
@@ -54,7 +54,8 @@ class TestHonchoEnabled:
 
         assert loop.tools.has("honcho_search")
         assert loop.tools.has("honcho_query")
-        assert loop.tools.has("honcho_note")
+        assert loop.tools.has("honcho_profile")
+        assert loop.tools.has("honcho_conclude")
         assert loop._honcho is not None
 
     def test_honcho_adapter_set_on_context(self, bus, mock_provider, workspace):
@@ -143,14 +144,14 @@ class TestContextInjection:
 
         # Honcho context should NOT be in system prompt
         prompt = await loop.context.build_system_prompt()
-        assert "User Context (Honcho)" not in prompt
+        assert "User Profile & Context (primary)" not in prompt
 
         # Honcho context should be in user message (runtime context block)
         messages = await loop.context.build_messages(
             history=[], current_message="Hello", channel="cli", chat_id="direct",
         )
         user_content = messages[-1]["content"]
-        assert "User Context (Honcho)" in user_content
+        assert "User Profile & Context (primary)" in user_content
         assert "data scientist" in user_content
 
     async def test_no_context_on_cold_start(self, bus, mock_provider, workspace):
@@ -167,7 +168,7 @@ class TestContextInjection:
         )
 
         prompt = await loop.context.build_system_prompt()
-        assert "User Context (Honcho)" not in prompt
+        assert "User Profile & Context (primary)" not in prompt
 
 
 class TestConsolidationHybridMode:
