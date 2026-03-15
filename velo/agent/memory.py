@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from velo.agent.security import scan_content
-from velo.utils.helpers import ensure_dir
+from velo.utils.helpers import atomic_write, ensure_dir
 
 if TYPE_CHECKING:
     from velo.providers.base import LLMProvider
@@ -74,31 +73,6 @@ def _format_usage_section(label: str, content: str, limit: int) -> str:
     return f"{header}\n{content}"
 
 
-def _atomic_write(path: Path, content: str) -> None:
-    """Write content to path atomically via temp file + rename.
-
-    Ensures MEMORY.md/USER.md are never left corrupt if the process dies
-    mid-write. The rename is atomic on POSIX when src/dst are on the same fs.
-
-    Args:
-        path: Destination file path.
-        content: Text content to write.
-    """
-    fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp", prefix=".mem_")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(content)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, str(path))  # atomic on same filesystem
-    except BaseException:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
-
-
 class MemoryStore:
     """Two-layer memory: MEMORY.md (long-term facts) + HISTORY.md (grep-searchable log).
 
@@ -127,7 +101,7 @@ class MemoryStore:
         if threat:
             logger.warning("{}", threat)
             return False
-        _atomic_write(path, content)
+        atomic_write(path, content)
         return True
 
     def write_long_term(self, content: str) -> bool:

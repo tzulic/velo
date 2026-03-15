@@ -10,8 +10,7 @@ from velo.agent.tools.base import Tool
 # Paths are resolved at module load time so that macOS symlinks
 # (e.g. /etc → /private/etc) are handled correctly in the check below.
 _DENYLIST: frozenset[Path] = frozenset(
-    Path(d).resolve()
-    for d in ["/etc", "/proc", "/sys", "/dev", "/root", "/boot", "/run"]
+    Path(d).resolve() for d in ["/etc", "/proc", "/sys", "/dev", "/root", "/boot", "/run"]
 )
 
 

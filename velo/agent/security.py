@@ -57,19 +57,9 @@ THREAT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bexec\s*\(", re.IGNORECASE), "exec_call"),
 ]
 
-# Unicode invisible/directional chars used to hide injected instructions.
-INVISIBLE_CHARS: set[str] = {
-    "\u200b",
-    "\u200c",
-    "\u200d",
-    "\u2060",
-    "\ufeff",
-    "\u202a",
-    "\u202b",
-    "\u202c",
-    "\u202d",
-    "\u202e",
-}
+# Reason: single regex is faster than char-by-char set lookup for large content.
+# Pushes the scan loop into the C-level regex engine.
+_INVISIBLE_CHARS_RE = re.compile(r"[\u200b\u200c\u200d\u2060\ufeff\u202a-\u202e]")
 
 
 def scan_content(content: str) -> str | None:
@@ -81,9 +71,9 @@ def scan_content(content: str) -> str | None:
     Returns:
         Error string describing the threat if detected, None if safe.
     """
-    found = next((c for c in content if c in INVISIBLE_CHARS), None)
-    if found:
-        return f"security.write_rejected: invisible_char U+{ord(found):04X}"
+    match = _INVISIBLE_CHARS_RE.search(content)
+    if match:
+        return f"security.write_rejected: invisible_char U+{ord(match.group()):04X}"
 
     for pattern, threat_type in THREAT_PATTERNS:
         if pattern.search(content):

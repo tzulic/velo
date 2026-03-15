@@ -11,8 +11,7 @@ from velo.agent.tools.base import Tool
 # Directories that must never be used as working_dir for shell commands.
 # Resolved at module load for correct symlink handling on macOS (e.g. /etc → /private/etc).
 _WORKING_DIR_DENYLIST: frozenset[Path] = frozenset(
-    Path(d).resolve()
-    for d in ["/etc", "/proc", "/sys", "/dev", "/root", "/boot", "/run"]
+    Path(d).resolve() for d in ["/etc", "/proc", "/sys", "/dev", "/root", "/boot", "/run"]
 )
 
 # Original 9 core patterns (always active)
@@ -251,8 +250,7 @@ class ExecTool(Tool):
         try:
             cwd_resolved = Path(cwd).resolve()
             if any(
-                cwd_resolved == d or cwd_resolved.is_relative_to(d)
-                for d in _WORKING_DIR_DENYLIST
+                cwd_resolved == d or cwd_resolved.is_relative_to(d) for d in _WORKING_DIR_DENYLIST
             ):
                 return "Error: Command blocked by safety guard (restricted working directory)"
         except Exception:
@@ -262,10 +260,7 @@ class ExecTool(Tool):
         for raw in self._extract_absolute_paths(cmd):
             try:
                 resolved = Path(raw.strip()).resolve(strict=False)
-                if any(
-                    resolved == d or resolved.is_relative_to(d)
-                    for d in _WORKING_DIR_DENYLIST
-                ):
+                if any(resolved == d or resolved.is_relative_to(d) for d in _WORKING_DIR_DENYLIST):
                     return "Error: Command blocked by safety guard (symlink to restricted path)"
             except Exception:
                 continue
@@ -273,9 +268,7 @@ class ExecTool(Tool):
         # Per-session allowlist: skip deny check if command is pre-approved
         if self._current_session_key:
             for pat in self._compiled_deny:
-                if pat.search(lower) and self._allowlist.is_allowed(
-                    self._current_session_key, cmd
-                ):
+                if pat.search(lower) and self._allowlist.is_allowed(self._current_session_key, cmd):
                     return None
 
         for pat in self._compiled_deny:

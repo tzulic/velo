@@ -23,7 +23,6 @@ def mock_adapter():
     adapter.dialectic_query = AsyncMock(return_value="The user is a developer.")
     adapter.get_peer_card = AsyncMock(return_value="Name: Alice\nTimezone: GMT+1")
     adapter.add_conclusion = AsyncMock()
-    adapter.add_note = AsyncMock()
     return adapter
 
 

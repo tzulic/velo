@@ -9,16 +9,31 @@ raised to the caller.
 from __future__ import annotations
 
 import asyncio
-import os
 import re
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from loguru import logger
 
 from velo.agent.honcho.config import HonchoConfig
+from velo.utils.helpers import atomic_write, ensure_dir
+
+
+def _extract_text(content: str | list[Any]) -> str:
+    """Extract plain text from a Velo message content field.
+
+    Handles both string content and multimodal content lists.
+
+    Args:
+        content: Message content — either a string or a list of content parts.
+
+    Returns:
+        Extracted text string.
+    """
+    if isinstance(content, list):
+        return " ".join(c.get("text", "") for c in content if c.get("type") == "text")
+    return content
 
 
 @dataclass
@@ -33,6 +48,7 @@ class HonchoSessionState:
         last_synced_idx: Index of last message synced to Honcho.
         context_cache: Prefetched context string for next turn.
         peer_card_cache: Prefetched peer card for the user.
+        peer_card_consumed: Whether peer card was already returned by get_peer_card this turn.
     """
 
     session_key: str
@@ -42,7 +58,15 @@ class HonchoSessionState:
     last_synced_idx: int = 0
     context_cache: str = ""
     peer_card_cache: str = ""
+    peer_card_consumed: bool = False
     _prefetch_task: asyncio.Task[None] | None = field(default=None, repr=False)
+
+    @property
+    def session_id(self) -> str:
+        """Extract session ID from Honcho session object."""
+        if self.session is None:
+            return ""
+        return self.session.id if hasattr(self.session, "id") else str(self.session)
 
 
 class HonchoAdapter:
@@ -70,6 +94,8 @@ class HonchoAdapter:
         self._current_session_key: str = ""
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._identity_seeded: set[str] = set()
+        self._soul_content: str | None = None  # Cached SOUL.md content
+        self._last_card_hash: int = 0  # Change detection for USER.md sync
 
     @property
     def current_session_key(self) -> str:
@@ -139,6 +165,48 @@ class HonchoAdapter:
         return self._aio
 
     # ------------------------------------------------------------------
+    # Shared helpers
+    # ------------------------------------------------------------------
+
+    async def _create_observation(self, peer: Any, session_id: str, content: str) -> bool:
+        """Create an observation/conclusion on a peer, with SDK version fallback.
+
+        Tries .observations (SDK v2), then .conclusions (SDK v3), then returns False.
+
+        Args:
+            peer: Honcho peer object.
+            session_id: Session ID string.
+            content: Observation content.
+
+        Returns:
+            True if created, False if API unavailable.
+        """
+        if hasattr(peer.aio, "observations"):
+            await peer.aio.observations.create(session_id=session_id, content=content)
+            return True
+        if hasattr(peer.aio, "conclusions"):
+            await peer.aio.conclusions.create(session_id=session_id, content=content)
+            return True
+        return False
+
+    def _get_soul_content(self) -> str:
+        """Read and cache SOUL.md content from workspace.
+
+        Returns:
+            SOUL.md content, or "" if unavailable.
+        """
+        if self._soul_content is not None:
+            return self._soul_content
+        if not self._workspace:
+            return ""
+        soul_path = self._workspace / "SOUL.md"
+        try:
+            self._soul_content = soul_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            self._soul_content = ""
+        return self._soul_content
+
+    # ------------------------------------------------------------------
     # Session lifecycle
     # ------------------------------------------------------------------
 
@@ -191,7 +259,7 @@ class HonchoAdapter:
                                 (ai_peer, SessionPeerConfig(observe_others=True)),
                             ]
                         )
-                    except (ImportError, AttributeError, Exception):
+                    except Exception:
                         # Reason: older SDK versions may not have SessionPeerConfig
                         # or add_peers. Degrade gracefully — observation still works
                         # via observe_me defaults, just without cross-observation.
@@ -225,43 +293,24 @@ class HonchoAdapter:
         """Seed SOUL.md content into the AI peer as an observation.
 
         Only seeds once per session key (tracked by _identity_seeded).
-        Reads SOUL.md from workspace and creates an observation on the AI peer.
 
         Args:
             state: The session state with AI peer to seed.
         """
         if state.session_key in self._identity_seeded:
             return
-        if not self._workspace or state.ai_peer is None or state.session is None:
-            return
-
-        soul_path = self._workspace / "SOUL.md"
-        if not soul_path.exists():
+        if state.ai_peer is None or state.session is None:
             return
 
         try:
-            soul_content = soul_path.read_text(encoding="utf-8")
+            soul_content = self._get_soul_content()
             if not soul_content.strip():
                 return
 
-            # Reason: create observation on AI peer about itself.
-            # SDK v2 uses .observations, v3 may use .conclusions.
-            peer = state.ai_peer
-            if hasattr(peer.aio, "observations"):
-                await peer.aio.observations.create(
-                    session_id=state.session.id
-                    if hasattr(state.session, "id")
-                    else str(state.session),
-                    content=f"[identity] {soul_content[:5000]}",
-                )
-            elif hasattr(peer.aio, "conclusions"):
-                await peer.aio.conclusions.create(
-                    session_id=state.session.id
-                    if hasattr(state.session, "id")
-                    else str(state.session),
-                    content=f"[identity] {soul_content[:5000]}",
-                )
-            else:
+            created = await self._create_observation(
+                state.ai_peer, state.session_id, f"[identity] {soul_content[:5000]}"
+            )
+            if not created:
                 logger.debug("honcho.seed_identity_skipped: no observations/conclusions API")
                 return
 
@@ -292,17 +341,13 @@ class HonchoAdapter:
 
             from honcho import MessageCreateParams
 
-            # Convert Velo messages to Honcho MessageCreateParams
             honcho_msgs: list[Any] = []
             for msg in new_messages:
                 role = msg.get("role", "")
                 content = msg.get("content", "")
                 if role not in ("user", "assistant") or not content:
                     continue
-                if isinstance(content, list):
-                    # Multimodal: extract text parts only
-                    text_parts = [c.get("text", "") for c in content if c.get("type") == "text"]
-                    content = " ".join(text_parts)
+                content = _extract_text(content)
                 if not content.strip():
                     continue
                 # Reason: Honcho uses peer_id instead of role. Map user->"user",
@@ -368,7 +413,7 @@ class HonchoAdapter:
 
         Starts a background task that calls session.aio.context() and
         fetches the user's peer card in parallel, then caches both.
-        Also syncs peer card to USER.md if configured.
+        Also syncs peer card to USER.md if configured and changed.
 
         Args:
             key: Velo session key.
@@ -397,6 +442,7 @@ class HonchoAdapter:
                 # but also structured fields. Use str() as fallback.
                 state.context_cache = ctx.content if hasattr(ctx, "content") else str(ctx)
                 state.peer_card_cache = card
+                state.peer_card_consumed = False
 
                 logger.debug(
                     "honcho.context_prefetched: key={} ctx_chars={} card_chars={}",
@@ -405,9 +451,12 @@ class HonchoAdapter:
                     len(state.peer_card_cache),
                 )
 
-                # Sync peer card to USER.md as local cache
+                # Sync peer card to USER.md as local cache (skip if unchanged)
                 if self._config.sync_peer_card_to_user_md and card:
-                    self._sync_peer_card_to_file(card)
+                    card_hash = hash(card)
+                    if card_hash != self._last_card_hash:
+                        self._sync_peer_card_to_file(card)
+                        self._last_card_hash = card_hash
 
             except asyncio.CancelledError:
                 pass
@@ -442,7 +491,7 @@ class HonchoAdapter:
     def _sync_peer_card_to_file(self, card_content: str) -> None:
         """Write peer card to workspace/memory/USER.md as local cache.
 
-        Atomic write to prevent corruption. Only writes if workspace is set.
+        Uses shared atomic_write to prevent corruption.
 
         Args:
             card_content: Peer card text to write.
@@ -451,29 +500,16 @@ class HonchoAdapter:
             return
         try:
             user_md = self._workspace / "memory" / "USER.md"
-            user_md.parent.mkdir(parents=True, exist_ok=True)
-            # Atomic write via temp file + rename
-            fd, tmp_path = tempfile.mkstemp(dir=str(user_md.parent), suffix=".tmp", prefix=".usr_")
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.write(card_content)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp_path, str(user_md))
-            except BaseException:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
+            ensure_dir(user_md.parent)
+            atomic_write(user_md, card_content)
         except Exception:
             logger.exception("honcho.peer_card_sync_failed")
 
     def pop_context_result(self, key: str) -> str:
         """Consume and return the prefetched context + peer card for a session.
 
-        After calling this, both caches are cleared. Returns empty string
-        on cold start (turn 1) or if prefetch hasn't completed.
+        After calling this, both caches are cleared. Skips peer card if it was
+        already consumed by get_peer_card() this turn (avoids sending twice).
 
         Args:
             key: Velo session key.
@@ -487,10 +523,13 @@ class HonchoAdapter:
         parts = []
         if state.context_cache:
             parts.append(state.context_cache)
-        if state.peer_card_cache:
+        # Reason: skip peer card if already consumed by honcho_profile tool
+        # this turn to avoid sending the same data to the LLM twice.
+        if state.peer_card_cache and not state.peer_card_consumed:
             parts.append(f"User Profile (from Honcho):\n{state.peer_card_cache}")
         state.context_cache = ""
         state.peer_card_cache = ""
+        state.peer_card_consumed = False
         return "\n\n".join(parts)
 
     # ------------------------------------------------------------------
@@ -529,7 +568,9 @@ class HonchoAdapter:
             logger.exception("honcho.search_context_failed: key={}", key)
             return "Error searching user context."
 
-    async def dialectic_query(self, key: str, query: str, peer: str = "user") -> str:
+    async def dialectic_query(
+        self, key: str, query: str, peer: Literal["user", "ai"] = "user"
+    ) -> str:
         """Ask Honcho about the user or the AI assistant via dialectic reasoning.
 
         Costs $0.001-$0.50 per query depending on complexity.
@@ -570,7 +611,8 @@ class HonchoAdapter:
         """Get the user's peer card (accumulated profile).
 
         Free and instant — returns cached data if available, otherwise
-        fetches from Honcho.
+        fetches from Honcho. Marks the card as consumed so pop_context_result
+        won't duplicate it in the runtime context.
 
         Args:
             key: Velo session key.
@@ -580,11 +622,14 @@ class HonchoAdapter:
         """
         try:
             state = await self.get_or_create(key)
-            # Return cached card if available from prefetch
             if state.peer_card_cache:
+                state.peer_card_consumed = True
                 return state.peer_card_cache
             # Otherwise fetch fresh
-            return await self._fetch_peer_card(state)
+            card = await self._fetch_peer_card(state)
+            if card:
+                state.peer_card_consumed = True
+            return card
         except Exception:
             logger.exception("honcho.get_peer_card_failed: key={}", key)
             return "Error retrieving user profile."
@@ -605,22 +650,9 @@ class HonchoAdapter:
             if state.user_peer is None or state.session is None:
                 return
 
-            peer = state.user_peer
-            session_id = state.session.id if hasattr(state.session, "id") else str(state.session)
-
-            # Try conclusions/observations API first (stronger than message approach)
-            if hasattr(peer.aio, "observations"):
-                await peer.aio.observations.create(
-                    session_id=session_id,
-                    content=content,
-                )
-                logger.debug("honcho.conclusion_added: key={}", key)
-                return
-            if hasattr(peer.aio, "conclusions"):
-                await peer.aio.conclusions.create(
-                    session_id=session_id,
-                    content=content,
-                )
+            # Try observations/conclusions API first (stronger than message approach)
+            created = await self._create_observation(state.user_peer, state.session_id, content)
+            if created:
                 logger.debug("honcho.conclusion_added: key={}", key)
                 return
 
@@ -637,31 +669,3 @@ class HonchoAdapter:
 
         except Exception:
             logger.exception("honcho.add_conclusion_failed: key={}", key)
-
-    async def add_note(self, key: str, content: str) -> None:
-        """Record a fact about the user. Triggers Honcho's reasoning pipeline.
-
-        The note is added as a message, which triggers background dreaming
-        to update peer cards.
-
-        Args:
-            key: Velo session key.
-            content: The fact or observation to record.
-        """
-        try:
-            state = await self.get_or_create(key)
-            if state.session is None:
-                return
-
-            from honcho import MessageCreateParams
-
-            await state.session.aio.add_messages(
-                MessageCreateParams(
-                    content=f"[note] {content}",
-                    peer_id=self._config.ai_peer,
-                )
-            )
-            logger.debug("honcho.note_added: key={}", key)
-
-        except Exception:
-            logger.exception("honcho.add_note_failed: key={}", key)

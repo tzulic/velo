@@ -68,6 +68,27 @@ def _validate_frontmatter(content: str) -> str | None:
     return None
 
 
+def _validate_skill_content(name: str | None, content: str) -> str | None:
+    """Validate name + content for create/edit actions.
+
+    Args:
+        name: Skill name.
+        content: Full SKILL.md content.
+
+    Returns:
+        Error message if invalid, None if valid.
+    """
+    if err := _validate_name(name):
+        return err
+    if not content:
+        return "Content is required."
+    if err := _validate_frontmatter(content):
+        return err
+    if threat := scan_content(content):
+        return f"Content blocked by security scan: {threat}"
+    return None
+
+
 def _is_builtin_skill(name: str) -> bool:
     """Check if a skill is a builtin (cannot be deleted).
 
@@ -177,14 +198,8 @@ class SkillManageTool(Tool):
         Returns:
             Success or error message.
         """
-        if err := _validate_name(name):
+        if err := _validate_skill_content(name, content):
             return json.dumps({"error": err})
-        if not content:
-            return json.dumps({"error": "Content is required for create action."})
-        if err := _validate_frontmatter(content):
-            return json.dumps({"error": err})
-        if threat := scan_content(content):
-            return json.dumps({"error": f"Content blocked by security scan: {threat}"})
 
         skill_dir = self._skills_dir / name
         if (skill_dir / "SKILL.md").exists():
@@ -210,14 +225,8 @@ class SkillManageTool(Tool):
         Returns:
             Success or error message.
         """
-        if err := _validate_name(name):
+        if err := _validate_skill_content(name, content):
             return json.dumps({"error": err})
-        if not content:
-            return json.dumps({"error": "Content is required for edit action."})
-        if err := _validate_frontmatter(content):
-            return json.dumps({"error": err})
-        if threat := scan_content(content):
-            return json.dumps({"error": f"Content blocked by security scan: {threat}"})
 
         skill_file = self._skills_dir / name / "SKILL.md"
         if not skill_file.exists():

@@ -139,7 +139,7 @@ class SubagentManager:
         def _cleanup(_: asyncio.Task) -> None:
             self._running_tasks.pop(task_id, None)
             if session_key:
-                if (ids := self._session_tasks.get(session_key)):
+                if ids := self._session_tasks.get(session_key):
                     ids.discard(task_id)
                     if not ids:
                         del self._session_tasks[session_key]
@@ -147,7 +147,10 @@ class SubagentManager:
         bg_task.add_done_callback(_cleanup)
 
         logger.info(
-            "subagent.spawned: id={} label={} parent_run_id={}", task_id, display_label, parent_run_id
+            "subagent.spawned: id={} label={} parent_run_id={}",
+            task_id,
+            display_label,
+            parent_run_id,
         )
         return f"Subagent [{display_label}] started (id: {task_id}). I'll notify you when it completes."
 

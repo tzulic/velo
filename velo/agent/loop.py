@@ -443,7 +443,9 @@ class AgentLoop:
             if isinstance(content, list):
                 # Flatten multimodal content to text.
                 content = " ".join(
-                    p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"
+                    p.get("text", "")
+                    for p in content
+                    if isinstance(p, dict) and p.get("type") == "text"
                 )
             if role == "user":
                 trajectory.append({"from": "human", "value": str(content)})
@@ -558,7 +560,8 @@ class AgentLoop:
             est = estimate_tokens(messages)
             if est > ctx_window * COMPRESSION_THRESHOLD and (iteration - last_compressed_iter) >= 3:
                 messages, _summary, est = await compress_context(
-                    messages, self.provider,
+                    messages,
+                    self.provider,
                     self.subagent_model or self.model,
                     ctx_window,
                     est_tokens=est,
@@ -591,9 +594,7 @@ class AgentLoop:
                         "provider.cooldown_fallback: {:.0f}s remaining on primary",
                         health.seconds_until_available(),
                     )
-                    health = get_provider_health(
-                        f"{self.provider.__class__.__name__}:{self.model}"
-                    )
+                    health = get_provider_health(f"{self.provider.__class__.__name__}:{self.model}")
 
             # Use streaming when a progress callback is available.
             if on_progress:
@@ -678,7 +679,9 @@ class AgentLoop:
                             # Stub remaining tool results so the message list stays valid
                             for remaining in pending_tools[idx:]:
                                 messages = self.context.add_tool_result(
-                                    messages, remaining.id, remaining.name,
+                                    messages,
+                                    remaining.id,
+                                    remaining.name,
                                     "[Interrupted — new message received]",
                                 )
                             logger.info("agent.interrupted_between_tools: session={}", session_key)
@@ -817,6 +820,7 @@ class AgentLoop:
 
                 task = asyncio.create_task(self._dispatch(msg))
                 self._active_tasks.setdefault(msg.session_key, []).append(task)
+
                 def _task_done(t: asyncio.Task, k: str = msg.session_key) -> None:
                     tasks_list = self._active_tasks.get(k, [])
                     if t in tasks_list:
@@ -838,7 +842,9 @@ class AgentLoop:
             if all_tasks:
                 logger.info("agent.shutdown_draining: waiting for {} task(s)", len(all_tasks))
                 try:
-                    await asyncio.wait_for(asyncio.gather(*all_tasks, return_exceptions=True), timeout=60.0)
+                    await asyncio.wait_for(
+                        asyncio.gather(*all_tasks, return_exceptions=True), timeout=60.0
+                    )
                 except asyncio.TimeoutError:
                     logger.warning("agent.shutdown_timeout: forcing stop after 60s drain")
             logger.info("agent.shutdown_completed")
@@ -1109,9 +1115,7 @@ class AgentLoop:
             self._honcho.track_task(
                 key, asyncio.create_task(self._honcho.sync_messages(key, session.messages))
             )
-            self._honcho.track_task(
-                key, asyncio.create_task(self._honcho.prefetch_context(key))
-            )
+            self._honcho.track_task(key, asyncio.create_task(self._honcho.prefetch_context(key)))
 
         if (mt := self.tools.get("message")) and isinstance(mt, MessageTool) and mt._sent_in_turn:
             return None

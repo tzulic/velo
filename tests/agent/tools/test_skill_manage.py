@@ -8,7 +8,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from velo.agent.tools.skill_manage import SkillManageTool, _validate_frontmatter, _validate_name
+from velo.agent.tools.skill_manage import (
+    SkillManageTool,
+    _validate_frontmatter,
+    _validate_name,
+    _validate_skill_content,
+)
 
 
 @pytest.fixture

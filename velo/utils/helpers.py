@@ -1,6 +1,8 @@
 """Utility functions for nanobot."""
 
+import os
 import re
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +24,31 @@ def ensure_dir(path: Path) -> Path:
     """Ensure directory exists, return it."""
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def atomic_write(path: Path, content: str) -> None:
+    """Write content to path atomically via temp file + rename.
+
+    Ensures the file is never left corrupt if the process dies mid-write.
+    The rename is atomic on POSIX when src/dst are on the same filesystem.
+
+    Args:
+        path: Destination file path.
+        content: Text content to write.
+    """
+    fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp", prefix=".aw_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, str(path))
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def timestamp() -> str:

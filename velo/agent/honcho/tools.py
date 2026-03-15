@@ -117,7 +117,10 @@ class HonchoQueryTool(Tool):
         if not key:
             return json.dumps({"error": "No active session for Honcho query."})
 
-        return await self._adapter.dialectic_query(key, query, peer=peer)
+        # Reason: tool executor passes str, but adapter expects Literal.
+        # Schema enum already validates the value.
+        validated_peer = "ai" if peer == "ai" else "user"
+        return await self._adapter.dialectic_query(key, query, peer=validated_peer)  # type: ignore[arg-type]
 
 
 class HonchoProfileTool(Tool):

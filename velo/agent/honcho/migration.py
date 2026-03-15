@@ -43,6 +43,8 @@ async def migrate_local_history(
 
         from honcho import MessageCreateParams
 
+        from velo.agent.honcho.adapter import _extract_text
+
         # Format as XML history block
         lines = []
         for msg in messages:
@@ -50,9 +52,7 @@ async def migrate_local_history(
             content = msg.get("content", "")
             if role not in ("user", "assistant") or not content:
                 continue
-            if isinstance(content, list):
-                text_parts = [c.get("text", "") for c in content if c.get("type") == "text"]
-                content = " ".join(text_parts)
+            content = _extract_text(content)
             if not content.strip():
                 continue
             ts = msg.get("timestamp", "")
@@ -103,21 +103,12 @@ async def migrate_memory_files(adapter: HonchoAdapter, key: str, workspace: Path
         if user_md.exists():
             user_content = user_md.read_text(encoding="utf-8").strip()
             if user_content:
-                peer = state.user_peer
-                session_id = (
-                    state.session.id if hasattr(state.session, "id") else str(state.session)
+                created = await adapter._create_observation(
+                    state.user_peer,
+                    state.session_id,
+                    f"[migrated_profile] {user_content[:5000]}",
                 )
-                if hasattr(peer.aio, "observations"):
-                    await peer.aio.observations.create(
-                        session_id=session_id,
-                        content=f"[migrated_profile] {user_content[:5000]}",
-                    )
-                elif hasattr(peer.aio, "conclusions"):
-                    await peer.aio.conclusions.create(
-                        session_id=session_id,
-                        content=f"[migrated_profile] {user_content[:5000]}",
-                    )
-                else:
+                if not created:
                     # Fallback: add as message
                     from honcho import MessageCreateParams
 
@@ -129,8 +120,9 @@ async def migrate_memory_files(adapter: HonchoAdapter, key: str, workspace: Path
                     )
                 logger.info("honcho.migrate_user_md_completed: key={}", key)
 
-        # Seed SOUL.md into AI peer
-        await seed_ai_identity(adapter, key, workspace)
+        # Reason: get_or_create already seeds on first creation, so this is
+        # only needed if the session was created before SOUL.md existed.
+        await adapter._seed_ai_identity(state)
 
         return True
 
@@ -155,7 +147,6 @@ async def seed_ai_identity(adapter: HonchoAdapter, key: str, workspace: Path) ->
     """
     try:
         state = await adapter.get_or_create(key)
-        # Delegate to the adapter's internal seeding method
         await adapter._seed_ai_identity(state)
         return True
     except Exception:
