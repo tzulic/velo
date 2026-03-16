@@ -63,6 +63,7 @@ list_tasks(status: str = "", priority: str = "", include_done: bool = False)
 
 - Filters by status and/or priority
 - `include_done=False` hides completed/cancelled by default
+- If `status` is explicitly set (e.g., `status="done"`), it overrides `include_done` — the explicit filter wins
 - Marks overdue tasks with `[OVERDUE]` prefix
 - Returns: formatted task list
 
@@ -74,6 +75,14 @@ delete_task(task_id: str)
 
 - Removes task permanently from storage
 - Returns: confirmation string
+- If task ID not found: returns `"Task {task_id} not found."`
+
+#### Error Handling (all tools)
+
+- **Invalid task ID:** `update_task` and `delete_task` return `"Task {task_id} not found."` — no exception raised
+- **Invalid status:** `update_task` returns `"Invalid status '{status}'. Valid: pending, in_progress, done, cancelled"`
+- **Invalid priority:** `create_task` / `update_task` returns `"Invalid priority '{priority}'. Valid: high, medium, low"`
+- **Max tasks reached:** `create_task` returns `"Task limit reached ({max_tasks}). Delete or complete existing tasks first."`
 
 ### 1.3 Context Provider
 
@@ -191,14 +200,14 @@ velo/skills/himalaya/
 | Action | Command |
 |--------|---------|
 | List inbox (10 most recent) | `himalaya envelope list --folder INBOX --page-size 10` |
-| List unread only | `himalaya envelope list --folder INBOX not flag Seen` |
-| Search by sender | `himalaya envelope list --folder INBOX from:boss@company.com` |
+| List unread only | `himalaya envelope list --folder INBOX --output json` then filter by flags |
+| Search by sender | `himalaya envelope list from boss@company.com` |
 | Read message | `himalaya message read <id>` |
 | Reply | `himalaya message reply <id>` (opens `$EDITOR` — pipe body via stdin for non-interactive) |
 | Reply-all | `himalaya message reply <id> --all` |
 | Forward | `himalaya message forward <id>` |
-| Send new | Compose via MML template piped to `himalaya message send` |
-| Move to folder | `himalaya envelope move <id> INBOX Archive` |
+| Send new | Compose via MML template piped to `himalaya template send` |
+| Move to folder | `himalaya message move <id> Archive` |
 | List folders | `himalaya folder list` |
 | JSON output | Add `--output json` to any command |
 | Download attachments | `himalaya attachment download <id>` |
@@ -206,7 +215,7 @@ velo/skills/himalaya/
 **Non-interactive sending** (for agent use):
 
 ```bash
-himalaya message send <<'EOF'
+himalaya template send <<'EOF'
 From: user@example.com
 To: recipient@example.com
 Subject: Meeting follow-up
