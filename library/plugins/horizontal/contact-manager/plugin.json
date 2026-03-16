@@ -1,0 +1,35 @@
+{
+  "id": "contact-manager",
+  "name": "Contact Manager",
+  "version": "1.0.0",
+  "description": "Local contact database with enrichment prompts and duplicate detection.",
+  "category": "horizontal",
+  "tags": ["contacts", "crm", "enrichment", "dedup"],
+  "config_schema": {
+    "max_contacts": {
+      "type": "integer",
+      "default": 500,
+      "label": "Maximum contacts",
+      "advanced": true
+    },
+    "auto_dedupe_on_add": {
+      "type": "boolean",
+      "default": true,
+      "label": "Check for duplicates when adding contacts"
+    }
+  },
+  "requires": {
+    "channels": [],
+    "env": [],
+    "plugins": []
+  },
+  "hooks": [],
+  "tools": ["add_contact", "update_contact", "delete_contact", "find_contacts", "enrich_contact", "dedupe_contacts"],
+  "services": false,
+  "context_provider": true,
+  "used_by_templates": ["ai-sdr", "customer-support"],
+  "ui_hints": {
+    "icon": "users",
+    "color": "purple"
+  }
+}
