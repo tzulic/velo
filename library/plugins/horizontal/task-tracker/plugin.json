@@ -1,0 +1,29 @@
+{
+  "id": "task-tracker",
+  "name": "Task Tracker",
+  "version": "1.0.0",
+  "description": "Persistent personal task management with priorities and due dates.",
+  "category": "horizontal",
+  "tags": ["productivity", "tasks", "reminders"],
+  "config_schema": {
+    "max_tasks": {
+      "type": "integer",
+      "default": 200,
+      "label": "Maximum number of tasks",
+      "advanced": true
+    },
+    "show_done_days": {
+      "type": "integer",
+      "default": 7,
+      "label": "Days to keep completed tasks before auto-cleanup",
+      "advanced": true
+    }
+  },
+  "requires": { "channels": [], "env": [], "plugins": [] },
+  "hooks": [],
+  "tools": ["create_task", "update_task", "list_tasks", "delete_task"],
+  "services": false,
+  "context_provider": true,
+  "used_by_templates": ["personal-productivity"],
+  "ui_hints": { "icon": "check-square", "color": "blue" }
+}
