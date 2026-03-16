@@ -33,7 +33,7 @@ Three strategies replace the current two:
 | Strategy | Behavior | Current Equivalent |
 |----------|----------|--------------------|
 | `fire_and_forget` | All callbacks run in parallel via `asyncio.gather`. Errors logged, never propagate. | Same as today |
-| `modifying` | Sequential by priority (lower priority number runs first). Each callback transforms the value. Return `None` = pass through unchanged. | Same as today |
+| `modifying` | Sequential by priority (lower priority number runs first). Each callback transforms the value. Return `None` = pass through unchanged. Return a dict containing `{"__block": True}` to short-circuit (for `before_tool_call`) or `{"cancel": True}` (for `message_sending`). | Same as today, with cancel/block extension |
 | `claiming` | Sequential by priority. First callback to return a truthy result wins; remaining callbacks skipped. | **New** |
 
 ### 1.2 The 20 Hooks
@@ -61,16 +61,16 @@ Three strategies replace the current two:
 
 | Hook | Strategy | Signature | Purpose |
 |------|----------|-----------|---------|
-| `before_tool_call` | modifying | `(value: dict, name: str, **kwargs) → dict \| None` | Block (`None`) or modify tool params. **Existing hook, unchanged.** |
-| `after_tool_call` | modifying | `(value: str, name: str, **kwargs) → str` | Modify tool result. **Existing hook, unchanged.** |
+| `before_tool_call` | modifying | `(value: dict, tool_name: str, **kwargs) → dict \| None` | Modify tool params. Return `None` to pass through. To block, return `{"__block": True}`. **Existing hook, kwarg renamed from `name` to `tool_name` to match call site.** |
+| `after_tool_call` | modifying | `(value: str, tool_name: str, **kwargs) → str` | Modify tool result. **Existing hook, kwarg renamed from `name` to `tool_name` to match call site.** |
 | `before_message_write` | modifying | `(value: dict, **kwargs) → dict \| None` | Modify or block (`None`) message before JSONL persistence. For PII redaction, debug filtering. |
 
 #### Session (4)
 
 | Hook | Strategy | Signature | Purpose |
 |------|----------|-----------|---------|
-| `session_start` | fire_and_forget | `(session_key: str, channel: str, chat_id: str, **kwargs) → None` | Initialize per-customer state, start SLA timer. |
-| `session_end` | fire_and_forget | `(session_key: str, message_count: int, duration_ms: int, **kwargs) → None` | Write summary to CRM, trigger CSAT, compute SLA metrics. |
+| `session_start` | fire_and_forget | `(session_key: str, channel: str, chat_id: str, **kwargs) → None` | Initialize per-customer state, start SLA timer. **Trigger:** first message with a session key not seen before (lazy session creation in SessionManager). |
+| `session_end` | fire_and_forget | `(session_key: str, message_count: int, duration_ms: int, **kwargs) → None` | Write summary to CRM, trigger CSAT, compute SLA metrics. **Triggers:** (1) `/new` or `/reset` command, (2) idle timeout (configurable, default 30 min no messages), (3) gateway shutdown. SessionManager needs new idle-timeout detection logic. |
 | `subagent_spawned` | fire_and_forget | `(child_session_key: str, parent_session_key: str, **kwargs) → None` | Track escalation subagents. |
 | `subagent_ended` | fire_and_forget | `(child_session_key: str, outcome: str, error: str \| None, **kwargs) → None` | Cleanup, route results back. |
 
@@ -137,7 +137,7 @@ The key difference: `message_sending` can cancel (return `{"cancel": True}`) whi
 | `message_received` | `velo/agent/loop.py` — when inbound message arrives |
 | `inbound_claim` | `velo/agent/loop.py` — before dispatching to agent |
 | `message_sending` | `velo/agent/loop.py` — before publishing outbound |
-| `message_sent` | `velo/bus/queue.py` — after channel confirms delivery |
+| `message_sent` | `velo/bus/delivery_queue.py` — after `DeliveryQueue.send()` succeeds (delivery confirmation exists here, not in MessageBus) |
 | `before_tool_call` | `velo/agent/loop.py` — before tool execution (existing) |
 | `after_tool_call` | `velo/agent/loop.py` — after tool execution (existing) |
 | `before_message_write` | `velo/session/manager.py` — before JSONL append |
@@ -279,7 +279,7 @@ def validate_manifest(manifest: PluginManifest) -> list[str]:
 ```
 
 **`velo/plugins/manager.py` changes:**
-- `discover()` reads `plugin.json` first, falls back to directory-only detection for backward compat during migration
+- `discover()` reads `plugin.json` manifests. Plugins without a manifest fail to load (no fallback — all plugins must have `plugin.json`).
 - `_register_plugin()` validates config against manifest schema before calling `register()`
 - `PluginMeta` dataclass gets a `manifest: PluginManifest | None` field
 
@@ -436,6 +436,7 @@ class HttpResponse:
 **New file: `velo/plugins/http.py`**
 - `HttpRequest`, `HttpResponse` dataclasses
 - `RouteTable` class: stores registered routes, detects collisions, dispatches requests
+- `PluginHttpServer` class: lightweight aiohttp server that serves plugin routes
 
 **`velo/plugins/types.py`:**
 - Add `register_http_route()` to `PluginContext`
@@ -443,10 +444,18 @@ class HttpResponse:
 
 **`velo/plugins/manager.py`:**
 - Collect routes from all plugins after registration
-- Pass route table to gateway for mounting
+- Start `PluginHttpServer` during activation phase (if any routes registered)
 
-**Gateway integration:**
-- Add handler in gateway that matches `/plugins/*` paths and dispatches to route table
+**Gateway HTTP server (new infrastructure):**
+
+The Velo gateway (`velo/cli/commands.py:gateway()`) currently runs only an asyncio event loop with a MessageBus — it has no HTTP server. This spec adds a lightweight aiohttp server specifically for plugin routes:
+
+- **New class:** `PluginHttpServer` in `velo/plugins/http.py`
+- **Port:** Reuses the gateway port (default 18790) — the HTTP server binds to it
+- **Lifecycle:** Started during plugin activation phase (after all routes collected), stopped during shutdown
+- **Scope:** Only serves `/plugins/*` paths. Not a general-purpose web framework.
+- **Library:** Uses `aiohttp` (already a dependency via several channels). No new dependencies.
+- **If no routes registered:** Server is not started (zero overhead for deployments without webhook plugins)
 
 ### 4.5 webhook-receiver Migration
 
@@ -533,10 +542,10 @@ No external dependencies. The schema format is simple enough (type, required, de
 | `velo/plugins/__init__.py` | Update exports |
 | `velo/agent/loop.py` | Fire 10 new hooks at appropriate points |
 | `velo/agent/context.py` | Fire `before_prompt_build` hook |
-| `velo/bus/queue.py` | Fire `message_sent` hook |
-| `velo/session/manager.py` | Fire `session_start`, `session_end`, `before_message_write` hooks |
+| `velo/bus/delivery_queue.py` | Fire `message_sent` hook after successful delivery |
+| `velo/session/manager.py` | Fire `session_start`, `session_end`, `before_message_write` hooks. Add idle-timeout detection for `session_end`. |
 | `velo/agent/subagent.py` | Fire `subagent_spawned`, `subagent_ended` hooks |
-| `velo/gateway/` (router) | Mount plugin HTTP routes |
+| `velo/cli/commands.py` | Start `PluginHttpServer` in gateway command if routes are registered |
 | All 14 library plugins | `setup()` → `register()` + `activate()` |
 | 2 builtin plugins | `setup()` → `register()` + `activate()` |
 
@@ -547,7 +556,7 @@ No external dependencies. The schema format is simple enough (type, required, de
 | `velo/providers/*` | Provider system is separate |
 | `velo/channels/*` | Hooks fired by bus/loop, not channels |
 | `velo/config/schema.py` | Plugin validation in plugin system |
-| `velo/cli/*` | No CLI changes in this phase |
+| `velo/cli/*` (except `commands.py`) | No CLI changes beyond gateway HTTP server startup |
 
 ---
 
