@@ -286,6 +286,7 @@ class ProviderConfig(Base):
     """LLM provider configuration."""
 
     api_key: str = ""
+    keys: list[str] = Field(default_factory=list)  # Multiple keys for rotation
     api_base: str | None = None
     extra_headers: dict[str, str] | None = None  # Custom headers (e.g. APP-Code for AiHubMix)
 
