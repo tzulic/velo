@@ -30,6 +30,7 @@ class BaseChannel(ABC):
         self.config = config
         self.bus = bus
         self._running = False
+        self._pairing_manager = None  # Set by gateway if pairing enabled
 
     @abstractmethod
     async def start(self) -> None:
@@ -68,6 +69,22 @@ class BaseChannel(ABC):
             return True
         return str(sender_id) in allow_list
 
+    def _check_pairing(self, sender_id: str, content: str) -> bool:
+        """Check if message is a valid pairing code.
+
+        Args:
+            sender_id: The sender's identifier.
+            content: Message text content.
+
+        Returns:
+            bool: True if successfully paired.
+        """
+        if not hasattr(self, "_pairing_manager") or self._pairing_manager is None:
+            return False
+        if not content.strip().upper().startswith("VELO-"):
+            return False
+        return self._pairing_manager.validate_code(content.strip().upper(), sender_id, self.name)
+
     async def _handle_message(
         self,
         sender_id: str,
@@ -91,13 +108,16 @@ class BaseChannel(ABC):
             session_key: Optional session key override (e.g. thread-scoped sessions).
         """
         if not self.is_allowed(sender_id):
-            logger.warning(
-                "Access denied for sender {} on channel {}. "
-                "Add them to allowFrom list in config to grant access.",
-                sender_id,
-                self.name,
-            )
-            return
+            if self._check_pairing(sender_id, content):
+                logger.info("channel.pairing_success: sender={} channel={}", sender_id, self.name)
+            else:
+                logger.warning(
+                    "Access denied for sender {} on channel {}. "
+                    "Add them to allowFrom list in config to grant access.",
+                    sender_id,
+                    self.name,
+                )
+                return
 
         msg = InboundMessage(
             channel=self.name,
