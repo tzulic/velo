@@ -13,6 +13,12 @@ from velo.config.schema import ExecToolConfig
 
 
 class TestDockerSandbox:
+    def setup_method(self):
+        """Reset cached Docker availability between tests."""
+        import velo.agent.tools.sandbox as _mod
+
+        _mod._docker_available = None
+
     @pytest.mark.asyncio
     async def test_docker_unavailable_raises(self, tmp_path: Path):
         config = ExecToolConfig(sandbox="docker")

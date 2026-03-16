@@ -67,7 +67,14 @@ class BaseChannel(ABC):
             return False
         if "*" in allow_list:
             return True
-        return str(sender_id) in allow_list
+        if str(sender_id) in allow_list:
+            return True
+        # Check pairing allowlist (runtime-granted access)
+        if self._pairing_manager is not None and self._pairing_manager.is_paired(
+            str(sender_id), self.name
+        ):
+            return True
+        return False
 
     def _check_pairing(self, sender_id: str, content: str) -> bool:
         """Check if message is a valid pairing code.
@@ -79,9 +86,11 @@ class BaseChannel(ABC):
         Returns:
             bool: True if successfully paired.
         """
-        if not hasattr(self, "_pairing_manager") or self._pairing_manager is None:
+        if self._pairing_manager is None:
             return False
-        if not content.strip().upper().startswith("VELO-"):
+        from velo.channels.pairing import CODE_PREFIX
+
+        if not content.strip().upper().startswith(CODE_PREFIX):
             return False
         return self._pairing_manager.validate_code(content.strip().upper(), sender_id, self.name)
 

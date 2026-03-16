@@ -36,7 +36,7 @@ class PairingTool(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["generate", "list", "revoke"],
+                    "enum": ["generate", "list"],
                     "description": "Action to perform",
                 },
                 "expires_hours": {
@@ -67,7 +67,7 @@ class PairingTool(Tool):
                 f"It expires in {expires_hours}h."
             )
         if action == "list":
-            codes = [c for c in self._mgr._codes.values() if c.uses < c.max_uses]
+            codes = self._mgr.list_active_codes()
             if not codes:
                 return "No active pairing codes."
             lines = [f"- {c.code} (uses: {c.uses}/{c.max_uses})" for c in codes]
