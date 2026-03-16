@@ -396,9 +396,7 @@ class SQLiteSessionStore:
             return
 
         # Backfill from messages table in batches to avoid loading all into memory
-        cursor = self._conn.execute(
-            "SELECT session_key, data FROM messages ORDER BY id ASC"
-        )
+        cursor = self._conn.execute("SELECT session_key, data FROM messages ORDER BY id ASC")
         indexed = 0
         while True:
             batch = cursor.fetchmany(500)

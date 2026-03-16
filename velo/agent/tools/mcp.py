@@ -99,9 +99,7 @@ async def connect_mcp_servers(
                 from velo.agent.security.env_isolation import build_safe_env
 
                 safe_env = build_safe_env(extra_env=dict(cfg.env) if cfg.env else None)
-                params = StdioServerParameters(
-                    command=cfg.command, args=cfg.args, env=safe_env
-                )
+                params = StdioServerParameters(command=cfg.command, args=cfg.args, env=safe_env)
                 read, write = await stack.enter_async_context(stdio_client(params))
             elif transport_type == "sse":
 

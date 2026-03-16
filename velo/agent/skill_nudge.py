@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 
 class SkillNudge:
     """Tracks tool-call complexity and suggests skill creation.
@@ -13,12 +11,10 @@ class SkillNudge:
     system prompt, providing a dynamic nudge only when warranted.
 
     Args:
-        workspace: Agent workspace path.
         min_tool_calls: Minimum tool calls in a turn to trigger a nudge.
     """
 
-    def __init__(self, workspace: Path, min_tool_calls: int = 5) -> None:
-        self._workspace = workspace
+    def __init__(self, min_tool_calls: int = 5) -> None:
         self._min_tool_calls = min_tool_calls
         self._nudged_this_session: bool = False
 

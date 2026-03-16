@@ -27,7 +27,9 @@ def clarify(mock_callback: AsyncMock) -> ClarifyTool:
 class TestClarifyToolExpectedUse:
     """Expected use: valid questions are forwarded to callback."""
 
-    async def test_open_ended_question(self, clarify: ClarifyTool, mock_callback: AsyncMock) -> None:
+    async def test_open_ended_question(
+        self, clarify: ClarifyTool, mock_callback: AsyncMock
+    ) -> None:
         """Open-ended question calls callback with no choices."""
         result = await clarify.execute(question="What is your preference?")
         mock_callback.assert_awaited_once_with("What is your preference?", None)
@@ -36,7 +38,9 @@ class TestClarifyToolExpectedUse:
         assert data["choices_offered"] is None
         assert data["user_response"] == "Option 1"
 
-    async def test_multiple_choice_question(self, clarify: ClarifyTool, mock_callback: AsyncMock) -> None:
+    async def test_multiple_choice_question(
+        self, clarify: ClarifyTool, mock_callback: AsyncMock
+    ) -> None:
         """Multiple-choice question passes choices to callback."""
         choices = ["Python", "JavaScript", "Go"]
         result = await clarify.execute(question="Pick a language", choices=choices)

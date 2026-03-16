@@ -26,7 +26,9 @@ class TestCliProviderInit:
         assert p.cli_path == "claude"
 
     def test_custom_params(self) -> None:
-        p = CliProvider(model="opus", timeout_s=60, permission_mode="default", cli_path="/usr/bin/claude")
+        p = CliProvider(
+            model="opus", timeout_s=60, permission_mode="default", cli_path="/usr/bin/claude"
+        )
         assert p.default_model == "opus"
         assert p.timeout_s == 60
         assert p.permission_mode == "default"
@@ -110,28 +112,38 @@ class TestParseOutput:
 
 class TestBuildCmd:
     def test_fresh_session_includes_session_id(self) -> None:
-        cmd = CliProvider()._build_cmd("hi", "abc-uuid", "sonnet", is_resume=False, system_prompt=None)
+        cmd = CliProvider()._build_cmd(
+            "hi", "abc-uuid", "sonnet", is_resume=False, system_prompt=None
+        )
         assert "--session-id" in cmd
         assert "abc-uuid" in cmd
         assert "--resume" not in cmd
         assert cmd[-1] == "hi"
 
     def test_resume_session_includes_resume(self) -> None:
-        cmd = CliProvider()._build_cmd("hi", "abc-uuid", "sonnet", is_resume=True, system_prompt=None)
+        cmd = CliProvider()._build_cmd(
+            "hi", "abc-uuid", "sonnet", is_resume=True, system_prompt=None
+        )
         assert "--resume" in cmd
         assert "--session-id" not in cmd
 
     def test_system_prompt_injected_on_first_turn(self) -> None:
-        cmd = CliProvider()._build_cmd("hi", "abc-uuid", "sonnet", is_resume=False, system_prompt="Be helpful.")
+        cmd = CliProvider()._build_cmd(
+            "hi", "abc-uuid", "sonnet", is_resume=False, system_prompt="Be helpful."
+        )
         assert "--append-system-prompt" in cmd
         assert "Be helpful." in cmd
 
     def test_system_prompt_not_injected_on_resume(self) -> None:
-        cmd = CliProvider()._build_cmd("hi", "abc-uuid", "sonnet", is_resume=True, system_prompt="Be helpful.")
+        cmd = CliProvider()._build_cmd(
+            "hi", "abc-uuid", "sonnet", is_resume=True, system_prompt="Be helpful."
+        )
         assert "--append-system-prompt" not in cmd
 
     def test_model_included(self) -> None:
-        cmd = CliProvider(model="opus")._build_cmd("hi", "abc-uuid", "opus", is_resume=False, system_prompt=None)
+        cmd = CliProvider(model="opus")._build_cmd(
+            "hi", "abc-uuid", "opus", is_resume=False, system_prompt=None
+        )
         assert "--model" in cmd
         assert "opus" in cmd
 

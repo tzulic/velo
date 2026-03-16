@@ -10,6 +10,11 @@ _PREFERENCE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b(don't forget|important:|note:)\b", re.I),
 ]
 
+# Pre-compiled stripping patterns for code fences and blockquotes.
+_RE_CODE_FENCE = re.compile(r"```[\s\S]*?```")
+_RE_INLINE_CODE = re.compile(r"`[^`]+`")
+_RE_BLOCKQUOTE = re.compile(r"^>.*$", re.MULTILINE)
+
 
 def should_trigger_memory_nudge(user_message: str) -> bool:
     """Return True if the user's message contains memory-worthy patterns.
@@ -24,9 +29,9 @@ def should_trigger_memory_nudge(user_message: str) -> bool:
     """
     if not user_message:
         return False
-    stripped = re.sub(r"```[\s\S]*?```", "", user_message)
-    stripped = re.sub(r"`[^`]+`", "", stripped)
-    stripped = re.sub(r"^>.*$", "", stripped, flags=re.MULTILINE)
+    stripped = _RE_CODE_FENCE.sub("", user_message)
+    stripped = _RE_INLINE_CODE.sub("", stripped)
+    stripped = _RE_BLOCKQUOTE.sub("", stripped)
     return any(p.search(stripped) for p in _PREFERENCE_PATTERNS)
 
 

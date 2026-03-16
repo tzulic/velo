@@ -194,7 +194,11 @@ class HeartbeatService:
         Returns:
             bool: True if notifications should be suppressed.
         """
-        if self._quiet_tz is None or self._quiet_start_minutes is None or self._quiet_end_minutes is None:
+        if (
+            self._quiet_tz is None
+            or self._quiet_start_minutes is None
+            or self._quiet_end_minutes is None
+        ):
             return False
         now = datetime.now(self._quiet_tz)
         now_minutes = now.hour * 60 + now.minute
@@ -281,9 +285,7 @@ class HeartbeatService:
             try:
                 # Wait for the interval or an external event, whichever comes first.
                 try:
-                    event = await asyncio.wait_for(
-                        self._event_queue.get(), timeout=self.interval_s
-                    )
+                    event = await asyncio.wait_for(self._event_queue.get(), timeout=self.interval_s)
                     logger.debug("heartbeat.event_wake: type={}", event.get("type"))
                     await self._tick(event=event)
                 except asyncio.TimeoutError:
@@ -305,7 +307,9 @@ class HeartbeatService:
         # If triggered by an event, skip Phase 1 and build the task summary from the event.
         if event is not None:
             summary = event.get("summary", "")
-            task_prompt = f"Background task completed: {summary}" if summary else "Background task completed."
+            task_prompt = (
+                f"Background task completed: {summary}" if summary else "Background task completed."
+            )
             await self._execute_and_notify(task_prompt)
             return
 
@@ -344,7 +348,9 @@ class HeartbeatService:
 
         # Deduplication: suppress if identical response was delivered within 24h
         if self._is_duplicate(response):
-            logger.info("heartbeat.suppressed_duplicate: identical response within {}h", _DEDUP_WINDOW_H)
+            logger.info(
+                "heartbeat.suppressed_duplicate: identical response within {}h", _DEDUP_WINDOW_H
+            )
             return
 
         # Quiet hours: suppress notification but record delivery state

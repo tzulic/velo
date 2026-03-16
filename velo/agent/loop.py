@@ -40,6 +40,10 @@ from velo.agent.tools.registry import ToolRegistry
 from velo.agent.tools.search import SearchToolsTool
 from velo.agent.tools.shell import ExecTool
 from velo.agent.tools.spawn import SpawnTool
+from velo.agent.memory_triggers import (
+    get_triggered_nudge as _get_triggered_nudge,
+    should_trigger_memory_nudge as _should_trigger_memory_nudge,
+)
 from velo.agent.tools.web import WebFetchTool, WebSearchTool
 from velo.bus.events import InboundMessage, OutboundMessage  # noqa: I001
 from velo.bus.queue import MessageBus  # Honcho: lazy import of adapter/tools in __init__
@@ -1071,11 +1075,8 @@ class AgentLoop:
             )
 
         # Pattern-triggered memory nudge (fires on identity/preference signals)
-        if nudge is None:  # Don't double-nudge
-            from velo.agent.memory_triggers import should_trigger_memory_nudge, get_triggered_nudge
-
-            if should_trigger_memory_nudge(msg.content):
-                nudge = get_triggered_nudge()
+        if nudge is None and _should_trigger_memory_nudge(msg.content):
+            nudge = _get_triggered_nudge()
 
         history = session.get_history(max_messages=self.memory_window)
         initial_messages = await self.context.build_messages(

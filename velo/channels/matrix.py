@@ -31,9 +31,7 @@ try:
     from nio.crypto.attachments import decrypt_attachment
     from nio.exceptions import EncryptionError
 except ImportError as e:
-    raise ImportError(
-        "Matrix dependencies not installed. Run: pip install velo-ai[matrix]"
-    ) from e
+    raise ImportError("Matrix dependencies not installed. Run: pip install velo-ai[matrix]") from e
 
 from velo.bus.events import OutboundMessage
 from velo.channels.base import BaseChannel

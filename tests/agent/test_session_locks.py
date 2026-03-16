@@ -20,9 +20,7 @@ class _SequencedProvider(LLMProvider):
         self._hold.set()  # starts unblocked
 
     async def chat(self, messages, **kwargs) -> LLMResponse:
-        user_msg = next(
-            (m["content"] for m in reversed(messages) if m["role"] == "user"), "?"
-        )
+        user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "?")
         await self._hold.wait()
         self.call_order.append(str(user_msg))
         return LLMResponse(content=f"ok:{user_msg}", tool_calls=[])

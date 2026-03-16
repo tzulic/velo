@@ -18,7 +18,9 @@ class TestToolChoiceMapping:
 
 class TestStripPrefix:
     def test_strips_mistral_prefix(self) -> None:
-        assert MistralProvider._strip_prefix("mistral/mistral-large-latest") == "mistral-large-latest"
+        assert (
+            MistralProvider._strip_prefix("mistral/mistral-large-latest") == "mistral-large-latest"
+        )
 
     def test_no_prefix_unchanged(self) -> None:
         assert MistralProvider._strip_prefix("mistral-large-latest") == "mistral-large-latest"

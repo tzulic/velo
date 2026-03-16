@@ -17,13 +17,13 @@ _DENYLIST: frozenset[Path] = frozenset(
 # File-level denylist: specific files that must never be read/written.
 # Uses fnmatch glob patterns against resolved absolute paths.
 _FILE_DENYLIST_PATTERNS: tuple[str, ...] = (
-    "*/config.json",       # Velo config with channel tokens
-    "*/.env",              # Environment files
-    "*/.env.*",            # .env.local, .env.production, etc.
-    "*credentials*",       # Any credentials file
-    "*/secrets/*",         # Secrets directories
-    "*.key",               # Private keys
-    "*.pem",               # Certificates/keys
+    "*/config.json",  # Velo config with channel tokens
+    "*/.env",  # Environment files
+    "*/.env.*",  # .env.local, .env.production, etc.
+    "*credentials*",  # Any credentials file
+    "*/secrets/*",  # Secrets directories
+    "*.key",  # Private keys
+    "*.pem",  # Certificates/keys
 )
 
 

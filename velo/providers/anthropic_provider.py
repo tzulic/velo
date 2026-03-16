@@ -110,14 +110,18 @@ class AnthropicProvider(LLMProvider):
                 content = msg.get("content", "")
                 if not isinstance(content, str):
                     content = json.dumps(content, ensure_ascii=False) if content else "(empty)"
-                converted.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": msg.get("tool_call_id", ""),
-                        "content": content or "(empty)",
-                    }],
-                })
+                converted.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": msg.get("tool_call_id", ""),
+                                "content": content or "(empty)",
+                            }
+                        ],
+                    }
+                )
 
             elif role == "user":
                 content = msg.get("content", "")
@@ -152,16 +156,19 @@ class AnthropicProvider(LLMProvider):
             name = fn.get("name")
             if not name:
                 continue
-            result.append({
-                "name": name,
-                "description": fn.get("description", ""),
-                "input_schema": fn.get("parameters", {"type": "object", "properties": {}}),
-            })
+            result.append(
+                {
+                    "name": name,
+                    "description": fn.get("description", ""),
+                    "input_schema": fn.get("parameters", {"type": "object", "properties": {}}),
+                }
+            )
         return result
 
     @staticmethod
     def _map_tool_choice(
-        tool_choice: str, has_tools: bool,
+        tool_choice: str,
+        has_tools: bool,
     ) -> tuple[dict[str, str] | None, bool]:
         """Map OpenAI tool_choice to Anthropic format.
 
@@ -205,7 +212,8 @@ class AnthropicProvider(LLMProvider):
 
     @staticmethod
     def _build_thinking_params(
-        model: str, reasoning_effort: str | None,
+        model: str,
+        reasoning_effort: str | None,
     ) -> dict[str, Any]:
         """Build thinking/effort parameters based on model and effort level.
 
@@ -274,7 +282,8 @@ class AnthropicProvider(LLMProvider):
 
         # Tool choice mapping.
         tc_value, include_tools = self._map_tool_choice(
-            tool_choice, bool(anthropic_tools),
+            tool_choice,
+            bool(anthropic_tools),
         )
 
         kwargs: dict[str, Any] = {
@@ -329,7 +338,13 @@ class AnthropicProvider(LLMProvider):
             LLMResponse with content and/or tool calls.
         """
         kwargs = self._build_kwargs(
-            messages, tools, model, max_tokens, temperature, reasoning_effort, tool_choice,
+            messages,
+            tools,
+            model,
+            max_tokens,
+            temperature,
+            reasoning_effort,
+            tool_choice,
         )
         try:
             response = await self._client.messages.create(**kwargs)
@@ -360,7 +375,13 @@ class AnthropicProvider(LLMProvider):
             StreamChunk with incremental deltas and final metadata.
         """
         kwargs = self._build_kwargs(
-            messages, tools, model, max_tokens, temperature, reasoning_effort, tool_choice,
+            messages,
+            tools,
+            model,
+            max_tokens,
+            temperature,
+            reasoning_effort,
+            tool_choice,
         )
         try:
             async with self._client.messages.stream(**kwargs) as stream:
@@ -395,19 +416,23 @@ class AnthropicProvider(LLMProvider):
                     elif etype == "content_block_stop":
                         if current_tool:
                             args = json_repair.loads(tool_input_json) if tool_input_json else {}
-                            completed_tools.append(ToolCallRequest(
-                                id=current_tool["id"],
-                                name=current_tool["name"],
-                                arguments=args if isinstance(args, dict) else {},
-                            ))
+                            completed_tools.append(
+                                ToolCallRequest(
+                                    id=current_tool["id"],
+                                    name=current_tool["name"],
+                                    arguments=args if isinstance(args, dict) else {},
+                                )
+                            )
                             current_tool = None
                             tool_input_json = ""
                         # Finalize thinking block if we accumulated thinking text.
                         if thinking_parts:
-                            thinking_blocks.append({
-                                "type": "thinking",
-                                "thinking": "".join(thinking_parts),
-                            })
+                            thinking_blocks.append(
+                                {
+                                    "type": "thinking",
+                                    "thinking": "".join(thinking_parts),
+                                }
+                            )
                             thinking_parts = []
 
                 # Get final message for usage and stop reason.
@@ -419,9 +444,7 @@ class AnthropicProvider(LLMProvider):
                     finish_reason=stop,
                     tool_calls=completed_tools or None,
                     usage=usage or None,
-                    reasoning_content="".join(
-                        tb["thinking"] for tb in thinking_blocks
-                    ) or None,
+                    reasoning_content="".join(tb["thinking"] for tb in thinking_blocks) or None,
                 )
 
         except Exception as e:
@@ -456,18 +479,22 @@ class AnthropicProvider(LLMProvider):
             if btype == "text":
                 text_parts.append(block.text)
             elif btype == "thinking":
-                thinking_blocks.append({
-                    "type": "thinking",
-                    "thinking": block.thinking,
-                    "signature": getattr(block, "signature", ""),
-                })
+                thinking_blocks.append(
+                    {
+                        "type": "thinking",
+                        "thinking": block.thinking,
+                        "signature": getattr(block, "signature", ""),
+                    }
+                )
                 reasoning_parts.append(block.thinking)
             elif btype == "tool_use":
-                tool_calls.append(ToolCallRequest(
-                    id=block.id,
-                    name=block.name,
-                    arguments=block.input if isinstance(block.input, dict) else {},
-                ))
+                tool_calls.append(
+                    ToolCallRequest(
+                        id=block.id,
+                        name=block.name,
+                        arguments=block.input if isinstance(block.input, dict) else {},
+                    )
+                )
 
         stop_reason = _STOP_REASON_MAP.get(message.stop_reason or "", "stop")
         usage = _extract_usage(message)
@@ -497,11 +524,13 @@ def _build_assistant_blocks(msg: dict[str, Any]) -> list[dict[str, Any]]:
 
     # Preserve thinking blocks from previous turns.
     for tb in msg.get("thinking_blocks") or []:
-        blocks.append({
-            "type": "thinking",
-            "thinking": tb.get("thinking", ""),
-            "signature": tb.get("signature", ""),
-        })
+        blocks.append(
+            {
+                "type": "thinking",
+                "thinking": tb.get("thinking", ""),
+                "signature": tb.get("signature", ""),
+            }
+        )
 
     # Text content.
     content = msg.get("content")
@@ -519,12 +548,14 @@ def _build_assistant_blocks(msg: dict[str, Any]) -> list[dict[str, Any]]:
             args = fn.get("arguments", {})
             if isinstance(args, str):
                 args = json_repair.loads(args) if args else {}
-            blocks.append({
-                "type": "tool_use",
-                "id": tc.get("id", ""),
-                "name": fn.get("name", ""),
-                "input": args if isinstance(args, dict) else {},
-            })
+            blocks.append(
+                {
+                    "type": "tool_use",
+                    "id": tc.get("id", ""),
+                    "name": fn.get("name", ""),
+                    "input": args if isinstance(args, dict) else {},
+                }
+            )
 
     return blocks
 
@@ -590,7 +621,11 @@ def _handle_error(exc: Exception) -> LLMResponse:
         code = "auth_error"
     elif isinstance(exc, BadRequestError):
         msg_lower = error_msg.lower()
-        code = "context_overflow" if ("context" in msg_lower or "token" in msg_lower) else "bad_request"
+        code = (
+            "context_overflow"
+            if ("context" in msg_lower or "token" in msg_lower)
+            else "bad_request"
+        )
     elif isinstance(exc, InternalServerError):
         code = "server_error"
     elif isinstance(exc, APITimeoutError):

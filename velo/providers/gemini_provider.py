@@ -116,10 +116,12 @@ class GeminiProvider(LLMProvider):
                     result = content
                 else:
                     result = {"result": str(content)}
-                contents.append(types.Content(
-                    role="user",
-                    parts=[types.Part.from_function_response(name=name, response=result)],
-                ))
+                contents.append(
+                    types.Content(
+                        role="user",
+                        parts=[types.Part.from_function_response(name=name, response=result)],
+                    )
+                )
 
         # Enforce role alternation by merging consecutive same-role Content.
         merged = _merge_consecutive_roles(contents)
@@ -149,11 +151,13 @@ class GeminiProvider(LLMProvider):
             name = fn.get("name")
             if not name:
                 continue
-            declarations.append(types.FunctionDeclaration(
-                name=name,
-                description=fn.get("description", ""),
-                parameters=fn.get("parameters"),
-            ))
+            declarations.append(
+                types.FunctionDeclaration(
+                    name=name,
+                    description=fn.get("description", ""),
+                    parameters=fn.get("parameters"),
+                )
+            )
 
         if not declarations:
             return None
@@ -336,11 +340,13 @@ class GeminiProvider(LLMProvider):
                             fn_call = getattr(part, "function_call", None)
                             if fn_call:
                                 args = dict(fn_call.args) if fn_call.args else {}
-                                accumulated_tool_calls.append(ToolCallRequest(
-                                    id=_synthetic_tool_id(fn_call.name, args),
-                                    name=fn_call.name,
-                                    arguments=args,
-                                ))
+                                accumulated_tool_calls.append(
+                                    ToolCallRequest(
+                                        id=_synthetic_tool_id(fn_call.name, args),
+                                        name=fn_call.name,
+                                        arguments=args,
+                                    )
+                                )
 
         # Emit final chunk.
         usage = _extract_stream_usage(last_chunk) if last_chunk else {}
@@ -380,11 +386,13 @@ class GeminiProvider(LLMProvider):
                 fn_call = getattr(part, "function_call", None)
                 if fn_call:
                     args = dict(fn_call.args) if fn_call.args else {}
-                    tool_calls.append(ToolCallRequest(
-                        id=_synthetic_tool_id(fn_call.name, args),
-                        name=fn_call.name,
-                        arguments=args,
-                    ))
+                    tool_calls.append(
+                        ToolCallRequest(
+                            id=_synthetic_tool_id(fn_call.name, args),
+                            name=fn_call.name,
+                            arguments=args,
+                        )
+                    )
 
         # Map finish reason.
         raw_finish = str(candidate.finish_reason) if candidate.finish_reason else "STOP"
@@ -463,10 +471,12 @@ def _build_model_parts(msg: dict[str, Any]) -> list[Any]:
                     args = json.loads(args)
                 except (json.JSONDecodeError, ValueError):
                     args = {}
-            parts.append(types.Part.from_function_call(
-                name=fn.get("name", ""),
-                args=args if isinstance(args, dict) else {},
-            ))
+            parts.append(
+                types.Part.from_function_call(
+                    name=fn.get("name", ""),
+                    args=args if isinstance(args, dict) else {},
+                )
+            )
 
     return parts
 

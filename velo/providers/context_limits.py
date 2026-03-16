@@ -38,9 +38,9 @@ CONTEXT_WINDOWS: list[tuple[str, int]] = [
     # MiniMax
     ("minimax", 128_000),
     # Mistral — specific families first, then general fallback
-    ("codestral", 256_000),   # Codestral: confirmed 256K context
-    ("devstral", 256_000),    # Devstral: 256–262K range, 256K safe floor
-    ("mistral", 128_000),     # All other Mistral models default to 128K
+    ("codestral", 256_000),  # Codestral: confirmed 256K context
+    ("devstral", 256_000),  # Devstral: 256–262K range, 256K safe floor
+    ("mistral", 128_000),  # All other Mistral models default to 128K
     # Groq (hosted, varies by model)
     ("groq", 128_000),
 ]

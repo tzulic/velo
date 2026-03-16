@@ -61,6 +61,6 @@ class TestRedactCredentials:
         assert "eyJhbGci" in result  # preserved inside code block
 
     def test_password_field(self):
-        text = 'password=SuperSecretPassword123!'
+        text = "password=SuperSecretPassword123!"
         result = redact_credentials(text)
         assert "SuperSecretPassword123" not in result

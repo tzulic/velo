@@ -10,14 +10,20 @@ from loguru import logger
 
 from velo.config.schema import ExecToolConfig
 
+# Cached at module level — Docker availability doesn't change during process lifetime.
+_docker_available: bool | None = None
+
 
 def _check_docker() -> bool:
-    """Check if Docker CLI is available on PATH.
+    """Check if Docker CLI is available on PATH (cached after first call).
 
     Returns:
-        bool: True if the docker binary is found, False otherwise.
+        bool: True if the docker binary is found.
     """
-    return shutil.which("docker") is not None
+    global _docker_available  # noqa: PLW0603
+    if _docker_available is None:
+        _docker_available = shutil.which("docker") is not None
+    return _docker_available
 
 
 class DockerSandbox:
@@ -32,28 +38,18 @@ class DockerSandbox:
     """
 
     def __init__(self, config: ExecToolConfig, workspace: Path) -> None:
-        """Initialize DockerSandbox with config and workspace.
-
-        Args:
-            config: ExecToolConfig containing docker_* settings.
-            workspace: Path to the agent workspace directory.
-        """
         self._config = config
         self._workspace = workspace
-        self._container_id: str | None = None
 
     async def execute(self, command: str, timeout: int | None = None) -> tuple[str, int]:
         """Run command inside a Docker container and return output and exit code.
 
-        Spawns an ephemeral container via `docker run --rm` with CPU, memory,
-        and network limits from config. Kills the subprocess on timeout.
-
         Args:
             command: Shell command to execute inside the container.
-            timeout: Per-command timeout in seconds. Defaults to docker_timeout from config.
+            timeout: Per-command timeout in seconds.
 
         Returns:
-            tuple[str, int]: (stdout+stderr combined, exit_code). Exit code -9 on timeout, 1 on error.
+            tuple[str, int]: (stdout+stderr combined, exit_code).
 
         Raises:
             RuntimeError: If Docker is not available on this host.
@@ -64,23 +60,14 @@ class DockerSandbox:
         effective_timeout = timeout if timeout is not None else self._config.docker_timeout
 
         docker_cmd = [
-            "docker",
-            "run",
-            "--rm",
-            "--cpus",
-            str(self._config.docker_cpu_limit),
-            "--memory",
-            self._config.docker_memory_limit,
-            "--network",
-            self._config.docker_network,
-            "-v",
-            f"{self._workspace}:/workspace:ro",
-            "-w",
-            "/workspace",
+            "docker", "run", "--rm",
+            "--cpus", str(self._config.docker_cpu_limit),
+            "--memory", self._config.docker_memory_limit,
+            "--network", self._config.docker_network,
+            "-v", f"{self._workspace}:/workspace:ro",
+            "-w", "/workspace",
             self._config.docker_image,
-            "sh",
-            "-c",
-            command,
+            "sh", "-c", command,
         ]
 
         try:
@@ -89,7 +76,6 @@ class DockerSandbox:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
-
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=effective_timeout)
             output = stdout.decode("utf-8", errors="replace") if stdout else ""
             return output, proc.returncode or 0
@@ -107,22 +93,4 @@ class DockerSandbox:
             return f"Sandbox error: {exc}", 1
 
     async def cleanup(self) -> None:
-        """Remove any lingering container state.
-
-        If a named container ID was stored (e.g. for long-running containers),
-        it is force-removed. No-op if no container ID is set.
-        """
-        if self._container_id:
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    "docker",
-                    "rm",
-                    "-f",
-                    self._container_id,
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL,
-                )
-                await proc.wait()
-            except Exception:
-                pass
-            self._container_id = None
+        """No-op for ephemeral containers (--rm handles cleanup)."""

@@ -77,7 +77,7 @@ class TestProviderFallback:
         fallback = _make_mock_provider("fallback-model")
         loop = make_loop(fallback_provider=fallback)
 
-        assert loop._try_activate_fallback() is True   # first call: activates
+        assert loop._try_activate_fallback() is True  # first call: activates
         assert loop._try_activate_fallback() is False  # second call: already active
 
     @patch("velo.agent.llm_helpers.asyncio.sleep", new_callable=AsyncMock)
@@ -97,6 +97,7 @@ class TestProviderFallback:
         # auth_error is not retryable, so fallback would only be tried in _run_agent_loop
         # if the error_code is in RETRYABLE_ERRORS — auth_error is NOT, so fallback stays inactive
         from velo.providers.errors import RETRYABLE_ERRORS
+
         assert "auth_error" not in RETRYABLE_ERRORS
 
 
@@ -116,6 +117,7 @@ class TestStreamingFallback:
         # Simulate what the loop does: stream error → check retryable → activate fallback
         stream_response = _error_response("server_error")
         from velo.providers.errors import RETRYABLE_ERRORS
+
         assert stream_response.error_code in RETRYABLE_ERRORS
 
         activated = loop._try_activate_fallback()

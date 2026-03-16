@@ -248,6 +248,4 @@ class TestOptOutExtendedSafety:
         assert len(_CORE_DENY_PATTERNS) == 9
         assert len(_EXTENDED_DENY_PATTERNS) >= 20  # 24 new patterns
         tool = ExecTool(working_dir="/tmp", timeout=5, extended_safety=True)
-        assert len(tool.deny_patterns) == len(_CORE_DENY_PATTERNS) + len(
-            _EXTENDED_DENY_PATTERNS
-        )
+        assert len(tool.deny_patterns) == len(_CORE_DENY_PATTERNS) + len(_EXTENDED_DENY_PATTERNS)

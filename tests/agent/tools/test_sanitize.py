@@ -30,8 +30,9 @@ class TestSanitizeToolResult:
     def test_base64_data_uri_stripped(self) -> None:
         """Base64 data URIs are replaced with a placeholder."""
         import base64
+
         b64_blob = base64.b64encode(bytes(range(256)) * 2).decode()
-        result = f'Image: data:image/png;base64,{b64_blob} end'
+        result = f"Image: data:image/png;base64,{b64_blob} end"
         sanitized = sanitize_tool_result(result, max_chars=50_000)
         assert "base64 data removed" in sanitized
         assert b64_blob not in sanitized
@@ -39,6 +40,7 @@ class TestSanitizeToolResult:
     def test_raw_base64_blob_stripped(self) -> None:
         """Raw base64 blobs (200+ diverse chars) are replaced with a placeholder."""
         import base64
+
         b64_blob = base64.b64encode(bytes(range(256)) * 2).decode()
         result = f"prefix {b64_blob} suffix"
         sanitized = sanitize_tool_result(result, max_chars=50_000)
@@ -75,6 +77,7 @@ class TestSanitizeToolResult:
     def test_base64_strip_brings_under_limit(self) -> None:
         """If stripping base64 brings result under limit, no further truncation."""
         import base64
+
         text_part = "Result: OK"
         b64_part = base64.b64encode(bytes(range(256)) * 100).decode()
         result = f"{text_part} data:image/jpeg;base64,{b64_part}"

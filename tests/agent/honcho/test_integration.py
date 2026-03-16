@@ -39,9 +39,7 @@ class TestHonchoEnabled:
 
     def test_registers_honcho_tools_when_enabled(self, bus, mock_provider, workspace):
         """AgentLoop registers honcho tools when Honcho is configured."""
-        honcho_config = HonchoConfig(
-            enabled=True, api_key="test-key", workspace_id="test-ws"
-        )
+        honcho_config = HonchoConfig(enabled=True, api_key="test-key", workspace_id="test-ws")
 
         # Reason: HonchoAdapter.__init__ is lazy — no Honcho import happens
         # until get_or_create() is called, so no patching needed for init.
@@ -60,9 +58,7 @@ class TestHonchoEnabled:
 
     def test_honcho_adapter_set_on_context(self, bus, mock_provider, workspace):
         """AgentLoop sets Honcho adapter on ContextBuilder."""
-        honcho_config = HonchoConfig(
-            enabled=True, api_key="test-key", workspace_id="test-ws"
-        )
+        honcho_config = HonchoConfig(enabled=True, api_key="test-key", workspace_id="test-ws")
 
         loop = AgentLoop(
             bus=bus,
@@ -124,9 +120,7 @@ class TestContextInjection:
 
     async def test_context_injected_when_available(self, bus, mock_provider, workspace):
         """build_messages injects Honcho context into user message runtime block."""
-        honcho_config = HonchoConfig(
-            enabled=True, api_key="test-key", workspace_id="test-ws"
-        )
+        honcho_config = HonchoConfig(enabled=True, api_key="test-key", workspace_id="test-ws")
 
         loop = AgentLoop(
             bus=bus,
@@ -148,7 +142,10 @@ class TestContextInjection:
 
         # Honcho context should be in user message (runtime context block)
         messages = await loop.context.build_messages(
-            history=[], current_message="Hello", channel="cli", chat_id="direct",
+            history=[],
+            current_message="Hello",
+            channel="cli",
+            chat_id="direct",
         )
         user_content = messages[-1]["content"]
         assert "User Profile & Context (primary)" in user_content
@@ -156,9 +153,7 @@ class TestContextInjection:
 
     async def test_no_context_on_cold_start(self, bus, mock_provider, workspace):
         """build_messages has no Honcho section when no prefetched context."""
-        honcho_config = HonchoConfig(
-            enabled=True, api_key="test-key", workspace_id="test-ws"
-        )
+        honcho_config = HonchoConfig(enabled=True, api_key="test-key", workspace_id="test-ws")
 
         loop = AgentLoop(
             bus=bus,
@@ -208,7 +203,9 @@ class TestConsolidationHybridMode:
 
         # Consolidate with honcho_active=True
         result = await store.consolidate(
-            session, provider, "test-model",
+            session,
+            provider,
+            "test-model",
             memory_window=50,
             honcho_active=True,
         )
@@ -250,7 +247,9 @@ class TestConsolidationHybridMode:
         provider.chat = AsyncMock(return_value=response)
 
         result = await store.consolidate(
-            session, provider, "test-model",
+            session,
+            provider,
+            "test-model",
             memory_window=50,
             honcho_active=False,
         )
@@ -265,9 +264,7 @@ class TestCleanup:
 
     async def test_cleanup_calls_honcho_shutdown(self, bus, mock_provider, workspace):
         """cleanup() flushes and shuts down Honcho adapter."""
-        honcho_config = HonchoConfig(
-            enabled=True, api_key="test-key", workspace_id="test-ws"
-        )
+        honcho_config = HonchoConfig(enabled=True, api_key="test-key", workspace_id="test-ws")
 
         loop = AgentLoop(
             bus=bus,

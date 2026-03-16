@@ -45,10 +45,13 @@ class TestFTSIndexPopulation:
 
     def test_fts_index_populated_on_save(self, store: SQLiteSessionStore) -> None:
         """Saving a session indexes user and assistant messages for search."""
-        session = _make_session("telegram:100", messages=[
-            ("user", "What is kubernetes orchestration?"),
-            ("assistant", "Kubernetes orchestrates container workloads."),
-        ])
+        session = _make_session(
+            "telegram:100",
+            messages=[
+                ("user", "What is kubernetes orchestration?"),
+                ("assistant", "Kubernetes orchestrates container workloads."),
+            ],
+        )
         store.save(session)
 
         results = store.search_messages("kubernetes")
@@ -61,10 +64,13 @@ class TestKeywordSearch:
 
     def test_keyword_search_returns_matches(self, store: SQLiteSessionStore) -> None:
         """Searching for a keyword returns matching messages."""
-        session = _make_session("telegram:200", messages=[
-            ("user", "Configure the nginx reverse proxy"),
-            ("assistant", "Here is the nginx config for reverse proxy setup."),
-        ])
+        session = _make_session(
+            "telegram:200",
+            messages=[
+                ("user", "Configure the nginx reverse proxy"),
+                ("assistant", "Here is the nginx config for reverse proxy setup."),
+            ],
+        )
         store.save(session)
 
         results = store.search_messages("nginx")
@@ -73,10 +79,13 @@ class TestKeywordSearch:
 
     def test_empty_results_for_no_matches(self, store: SQLiteSessionStore) -> None:
         """Searching for a nonexistent term returns an empty list."""
-        session = _make_session("telegram:300", messages=[
-            ("user", "Hello world"),
-            ("assistant", "Hi there!"),
-        ])
+        session = _make_session(
+            "telegram:300",
+            messages=[
+                ("user", "Hello world"),
+                ("assistant", "Hi there!"),
+            ],
+        )
         store.save(session)
 
         results = store.search_messages("xylophone")
@@ -88,10 +97,13 @@ class TestQuerySanitization:
 
     def test_query_sanitization_cpp(self, store: SQLiteSessionStore) -> None:
         """Special characters like C++ don't crash FTS5."""
-        session = _make_session("telegram:400", messages=[
-            ("user", "I need help with C++ templates"),
-            ("assistant", "C++ templates are a powerful feature."),
-        ])
+        session = _make_session(
+            "telegram:400",
+            messages=[
+                ("user", "I need help with C++ templates"),
+                ("assistant", "C++ templates are a powerful feature."),
+            ],
+        )
         store.save(session)
 
         # Should not raise; C++ has special chars that could break FTS5
@@ -100,9 +112,12 @@ class TestQuerySanitization:
 
     def test_query_sanitization_unclosed_quotes(self, store: SQLiteSessionStore) -> None:
         """Unclosed quotes are balanced and don't crash."""
-        session = _make_session("telegram:401", messages=[
-            ("user", "Search for 'hello world"),
-        ])
+        session = _make_session(
+            "telegram:401",
+            messages=[
+                ("user", "Search for 'hello world"),
+            ],
+        )
         store.save(session)
 
         results = store.search_messages('"hello')
@@ -136,10 +151,13 @@ class TestBackfill:
     def test_backfill_indexes_existing(self, store: SQLiteSessionStore) -> None:
         """First search triggers backfill of pre-existing messages."""
         # Save session — this indexes via save()
-        session = _make_session("telegram:500", messages=[
-            ("user", "Install postgresql database"),
-            ("assistant", "Run apt-get install postgresql."),
-        ])
+        session = _make_session(
+            "telegram:500",
+            messages=[
+                ("user", "Install postgresql database"),
+                ("assistant", "Run apt-get install postgresql."),
+            ],
+        )
         store.save(session)
 
         # Create a new store pointing at same DB to simulate restart
@@ -155,18 +173,27 @@ class TestMultipleSessionSearch:
 
     def test_search_with_multiple_sessions(self, store: SQLiteSessionStore) -> None:
         """Results come from the correct sessions across multiple saved sessions."""
-        session1 = _make_session("telegram:601", messages=[
-            ("user", "Deploy the flask application"),
-            ("assistant", "Flask app deployed on port 5000."),
-        ])
-        session2 = _make_session("telegram:602", messages=[
-            ("user", "Set up the django project"),
-            ("assistant", "Django project is configured."),
-        ])
-        session3 = _make_session("telegram:603", messages=[
-            ("user", "Unrelated conversation about weather"),
-            ("assistant", "The weather is sunny today."),
-        ])
+        session1 = _make_session(
+            "telegram:601",
+            messages=[
+                ("user", "Deploy the flask application"),
+                ("assistant", "Flask app deployed on port 5000."),
+            ],
+        )
+        session2 = _make_session(
+            "telegram:602",
+            messages=[
+                ("user", "Set up the django project"),
+                ("assistant", "Django project is configured."),
+            ],
+        )
+        session3 = _make_session(
+            "telegram:603",
+            messages=[
+                ("user", "Unrelated conversation about weather"),
+                ("assistant", "The weather is sunny today."),
+            ],
+        )
         store.save(session1)
         store.save(session2)
         store.save(session3)
@@ -183,9 +210,12 @@ class TestMultipleSessionSearch:
 
     def test_search_result_fields(self, store: SQLiteSessionStore) -> None:
         """Search results contain expected fields."""
-        session = _make_session("telegram:700", messages=[
-            ("user", "Check the prometheus metrics"),
-        ])
+        session = _make_session(
+            "telegram:700",
+            messages=[
+                ("user", "Check the prometheus metrics"),
+            ],
+        )
         store.save(session)
 
         results = store.search_messages("prometheus")

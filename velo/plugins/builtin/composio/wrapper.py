@@ -88,9 +88,7 @@ class ComposioToolWrapper(Tool):
                 return f"(tool error: {result.get('error', 'unknown')})"
             return str(result)
         except TimeoutError:
-            logger.warning(
-                "composio tool '{}' timed out after {}s", self._name, self._timeout
-            )
+            logger.warning("composio tool '{}' timed out after {}s", self._name, self._timeout)
             return f"(Composio tool '{self._name}' timed out after {self._timeout}s)"
         except asyncio.CancelledError:
             task = asyncio.current_task()
