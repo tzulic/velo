@@ -223,7 +223,7 @@ Single file. The `SequenceRunner` class implements `ServiceLike` + `RuntimeAware
 #### `add_contact`
 
 ```
-add_contact(name: str, email: str = "", company: str = "", role: str = "", phone: str = "", source: str = "", tags: str = "", notes: str = "")
+add_contact(name: str, email: str = "", company: str = "", role: str = "", phone: str = "", industry: str = "", company_size: str = "", source: str = "", tags: str = "", notes: str = "")
 ```
 
 - Creates a contact with auto-generated ID (`CON-0001`)
@@ -330,6 +330,8 @@ When empty: `Contacts: none`
     "company": "Acme Corp",
     "role": "CTO",
     "phone": "+1-555-0123",
+    "industry": "Technology",
+    "company_size": "50-200",
     "source": "inbound",
     "tags": ["hot", "enterprise"],
     "enriched": true,
