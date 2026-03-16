@@ -1062,6 +1062,12 @@ class AgentLoop:
                 "consider saving it to memory/MEMORY.md or memory/USER.md now.]"
             )
 
+        # Pattern-triggered memory nudge (fires on identity/preference signals)
+        if nudge is None:  # Don't double-nudge
+            from velo.agent.memory_triggers import should_trigger_memory_nudge, get_triggered_nudge
+            if should_trigger_memory_nudge(msg.content):
+                nudge = get_triggered_nudge()
+
         history = session.get_history(max_messages=self.memory_window)
         initial_messages = await self.context.build_messages(
             history=history,
