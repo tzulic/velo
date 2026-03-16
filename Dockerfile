@@ -1,8 +1,11 @@
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
-# Install Node.js 20 for the WhatsApp bridge
+# Install Node.js 20 for the WhatsApp bridge + system libs for headless Chromium (patchright)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates gnupg git && \
+    apt-get install -y --no-install-recommends curl ca-certificates gnupg git \
+        libgbm1 libxkbcommon0 libxshmfence1 libatk1.0-0 libatk-bridge2.0-0 \
+        libcups2 libdrm2 libxcomposite1 libxdamage1 libxrandr2 libpango-1.0-0 \
+        libasound2 libnspr4 libnss3 libx11-xcb1 && \
     mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list && \

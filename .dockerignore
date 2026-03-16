@@ -12,5 +12,24 @@ node_modules/
 bridge/dist/
 workspace/
 
+# Not needed in runtime image
+case/
+docs/
+library/
+tests/
+app/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.github/
+CLAUDE.md
+TECHNICAL_REFERENCE.md
+LITELLM_MIGRATION.md
+SECURITY.md
+VOICE_MODE_RESEARCH.md
+core_agent_lines.sh
+velo_arch.png
+velo_logo.png
+
 # Sibling repos (not needed in build context)
 openclaw/
