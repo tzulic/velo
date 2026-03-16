@@ -218,11 +218,21 @@ class DashboardConfig(Base):
     agent_cooldown_s: float = 2.0  # Seconds to wait between agent-to-agent responses
 
 
+class PacingConfig(Base):
+    """Response pacing for natural feel on messaging platforms."""
+
+    mode: Literal["off", "natural", "custom"] = "off"
+    min_delay_ms: int = 300
+    max_delay_ms: int = 1500
+    chars_per_chunk: int = 200
+
+
 class ChannelsConfig(Base):
     """Configuration for chat channels."""
 
     send_progress: bool = False  # stream agent's text progress to the channel
     send_tool_hints: bool = False  # stream tool-call hints (e.g. read_file("…"))
+    pacing: PacingConfig = Field(default_factory=PacingConfig)
     whatsapp: WhatsAppConfig = Field(default_factory=WhatsAppConfig)
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     discord: DiscordConfig = Field(default_factory=DiscordConfig)
