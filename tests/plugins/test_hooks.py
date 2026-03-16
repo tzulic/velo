@@ -1,8 +1,11 @@
 """Tests for expanded hook system."""
 
+import pytest
 from pathlib import Path
+from unittest.mock import AsyncMock
 
-from velo.plugins.types import HOOKS, HttpRequest, HttpResponse, PluginContext
+from velo.plugins.manager import PluginManager
+from velo.plugins.types import HOOKS, HookEntry, HttpRequest, HttpResponse, PluginContext
 
 
 class TestHookDefinitions:
@@ -86,3 +89,82 @@ class TestHttpTypes:
         assert resp.status == 200
         assert resp.body == ""
         assert resp.headers == {}
+
+
+class TestClaimDispatch:
+    """Test claiming hook dispatch."""
+
+    def _make_manager(self) -> PluginManager:
+        mgr = PluginManager(workspace=Path("/tmp"), config={})
+        mgr._loaded = True
+        return mgr
+
+    @pytest.mark.asyncio
+    async def test_claim_returns_first_truthy(self):
+        mgr = self._make_manager()
+        mgr._hooks["inbound_claim"] = [
+            HookEntry(callback=AsyncMock(return_value=None), priority=100),
+            HookEntry(callback=AsyncMock(return_value={"handled": True}), priority=200),
+            HookEntry(callback=AsyncMock(return_value={"handled": True}), priority=300),
+        ]
+        result = await mgr.claim("inbound_claim", content="hi", channel="telegram", chat_id="123")
+        assert result == {"handled": True}
+        mgr._hooks["inbound_claim"][2].callback.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_claim_returns_none_when_no_claim(self):
+        mgr = self._make_manager()
+        mgr._hooks["inbound_claim"] = [
+            HookEntry(callback=AsyncMock(return_value=None), priority=100),
+        ]
+        result = await mgr.claim("inbound_claim", content="hi", channel="telegram", chat_id="123")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_claim_error_isolation(self):
+        mgr = self._make_manager()
+        mgr._hooks["inbound_claim"] = [
+            HookEntry(callback=AsyncMock(side_effect=RuntimeError("boom")), priority=100),
+            HookEntry(callback=AsyncMock(return_value={"handled": True}), priority=200),
+        ]
+        result = await mgr.claim("inbound_claim", content="hi", channel="telegram", chat_id="123")
+        assert result == {"handled": True}
+
+
+class TestPipeCancelBlock:
+    """Test pipe() cancel/block short-circuit."""
+
+    def _make_manager(self) -> PluginManager:
+        mgr = PluginManager(workspace=Path("/tmp"), config={})
+        mgr._loaded = True
+        return mgr
+
+    @pytest.mark.asyncio
+    async def test_pipe_cancel_short_circuits(self):
+        mgr = self._make_manager()
+        second_cb = AsyncMock(return_value="should not run")
+        mgr._hooks["message_sending"] = [
+            HookEntry(callback=AsyncMock(return_value={"cancel": True}), priority=100),
+            HookEntry(callback=second_cb, priority=200),
+        ]
+        result = await mgr.pipe("message_sending", value="hello", channel="telegram", chat_id="123")
+        assert result == {"cancel": True}
+        second_cb.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_pipe_block_short_circuits(self):
+        mgr = self._make_manager()
+        mgr._hooks["before_tool_call"] = [
+            HookEntry(callback=AsyncMock(return_value={"__block": True}), priority=100),
+        ]
+        result = await mgr.pipe("before_tool_call", value={"cmd": "rm -rf /"}, tool_name="exec")
+        assert result == {"__block": True}
+
+    @pytest.mark.asyncio
+    async def test_pipe_passthrough_unchanged(self):
+        mgr = self._make_manager()
+        mgr._hooks["after_prompt_build"] = [
+            HookEntry(callback=AsyncMock(return_value=None), priority=100),
+        ]
+        result = await mgr.pipe("after_prompt_build", value="original prompt")
+        assert result == "original prompt"

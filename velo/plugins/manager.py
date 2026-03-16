@@ -233,6 +233,7 @@ class PluginManager:
 
         Each callback receives the output of the previous one.
         Exceptions skip that callback and pass the value through unchanged.
+        Returns a dict with 'cancel' or '__block' for short-circuit.
 
         Args:
             hook: Hook name (must be a modifying hook).
@@ -240,17 +241,43 @@ class PluginManager:
             **kwargs: Additional arguments passed to each callback.
 
         Returns:
-            The final transformed value.
+            The final transformed value, or a dict with cancel/__block.
         """
         entries = self._hooks.get(hook, [])
         for entry in entries:
             try:
                 result = await self._call(entry.callback, value=value, **kwargs)
                 if result is not None:
+                    # Short-circuit on cancel or block
+                    if isinstance(result, dict) and (result.get("cancel") or result.get("__block")):
+                        return result
                     value = result
             except Exception:
                 logger.exception("plugin.pipe_failed: {} (skipping callback)", hook)
         return value
+
+    async def claim(self, hook: str, **kwargs: Any) -> Any:
+        """First-claim-wins hook dispatch.
+
+        Callbacks run sequentially by priority. The first to return a truthy
+        result wins; remaining callbacks are skipped.
+
+        Args:
+            hook: Hook name (must be a claiming hook).
+            **kwargs: Arguments passed to each callback.
+
+        Returns:
+            The first truthy result, or None if no callback claimed.
+        """
+        entries = self._hooks.get(hook, [])
+        for entry in entries:
+            try:
+                result = await self._call(entry.callback, **kwargs)
+                if result:
+                    return result
+            except Exception:
+                logger.exception("plugin.claim_failed: {}", hook)
+        return None
 
     # ------------------------------------------------------------------
     # Context providers
