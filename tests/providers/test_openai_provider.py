@@ -42,9 +42,19 @@ class TestBackendDefaults:
 
     def test_all_backends_defined(self) -> None:
         expected = {
-            "openai", "openrouter", "deepseek", "groq", "xai", "vllm",
-            "aihubmix", "siliconflow", "volcengine", "dashscope",
-            "moonshot", "minimax", "zhipu",
+            "openai",
+            "openrouter",
+            "deepseek",
+            "groq",
+            "xai",
+            "vllm",
+            "aihubmix",
+            "siliconflow",
+            "volcengine",
+            "dashscope",
+            "moonshot",
+            "minimax",
+            "zhipu",
         }
         assert expected == set(_BACKEND_DEFAULTS.keys())
 

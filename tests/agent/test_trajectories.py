@@ -68,7 +68,9 @@ class TestTrajectorySaving:
         assert convos[0] == {"from": "human", "value": "Say hello"}
         assert convos[1] == {"from": "gpt", "value": "Hello!"}
 
-    def test_failed_trajectories_go_to_separate_file(self, make_loop: Any, tmp_workspace: Path) -> None:
+    def test_failed_trajectories_go_to_separate_file(
+        self, make_loop: Any, tmp_workspace: Path
+    ) -> None:
         """Failed trajectories are written to failed_trajectories.jsonl."""
         loop = make_loop(workspace=tmp_workspace, save_trajectories=True)
         messages = [{"role": "user", "content": "This failed"}]
@@ -103,13 +105,13 @@ class TestTrajectorySaving:
         """No file is created when save_trajectories=False (default)."""
         loop = make_loop(workspace=tmp_workspace)
         # save_trajectories defaults to False
-        loop._save_trajectory(
-            [{"role": "user", "content": "hello"}], "cli:direct", completed=True
-        )
+        loop._save_trajectory([{"role": "user", "content": "hello"}], "cli:direct", completed=True)
 
         assert not (tmp_workspace / "trajectories").exists()
 
-    def test_tool_messages_excluded_from_trajectory(self, make_loop: Any, tmp_workspace: Path) -> None:
+    def test_tool_messages_excluded_from_trajectory(
+        self, make_loop: Any, tmp_workspace: Path
+    ) -> None:
         """Tool-role messages are not included in the trajectory (only user/assistant)."""
         loop = make_loop(workspace=tmp_workspace, save_trajectories=True)
         messages = [

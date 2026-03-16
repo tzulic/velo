@@ -26,7 +26,7 @@ _COST_TABLE: list[tuple[str, float, float]] = [
     ("gpt-4o-mini", 0.15, 0.60),  # must be before "gpt-4o"
     ("gpt-4o", 5.0, 15.0),
     ("gpt-4-turbo", 10.0, 30.0),
-    ("o1-mini", 3.0, 12.0),       # must be before "o1"
+    ("o1-mini", 3.0, 12.0),  # must be before "o1"
     ("o1", 15.0, 60.0),
 ]
 
@@ -169,7 +169,5 @@ def print_usage_summary(workspace: Path) -> None:
             f"${d['cost_usd']:>11.4f}"
         )
     print("-" * 58)
-    print(
-        f"{'TOTAL':<12} {len(records):>6} {total_in:>12,} {total_out:>12,} ${total_cost:>11.4f}"
-    )
+    print(f"{'TOTAL':<12} {len(records):>6} {total_in:>12,} {total_out:>12,} ${total_cost:>11.4f}")
     print()

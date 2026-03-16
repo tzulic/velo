@@ -27,7 +27,7 @@ def strip_model_prefix(model: str, *prefixes: str) -> str:
     """
     for prefix in prefixes:
         if model.startswith(prefix):
-            return model[len(prefix):]
+            return model[len(prefix) :]
     return model
 
 

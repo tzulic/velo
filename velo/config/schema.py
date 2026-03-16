@@ -399,6 +399,12 @@ class ExecToolConfig(Base):
         default_factory=list,
         description="Additional env var names to pass to shell/MCP subprocesses",
     )
+    sandbox: Literal["off", "docker"] = "off"
+    docker_image: str = "python:3.11-slim"
+    docker_cpu_limit: float = 1.0
+    docker_memory_limit: str = "512m"
+    docker_network: Literal["none", "bridge"] = "none"
+    docker_timeout: int = 60
 
 
 class MCPServerConfig(Base):
@@ -439,6 +445,23 @@ class AuxiliaryConfig(Base):
     summarization: AuxiliaryModelConfig = Field(default_factory=AuxiliaryModelConfig)
 
 
+class WebhookBindingConfig(Base):
+    """Route external webhook to a specific agent session."""
+
+    name: str = ""
+    path: str = ""
+    secret: str = ""
+    session_key: str = ""
+    template: str = "{payload}"
+
+
+class WebhooksConfig(Base):
+    """Webhook/conversation binding configuration."""
+
+    enabled: bool = False
+    bindings: list[WebhookBindingConfig] = Field(default_factory=list)
+
+
 class Config(BaseSettings):
     """Root configuration for velo."""
 
@@ -451,6 +474,7 @@ class Config(BaseSettings):
     a2a: A2AConfig = Field(default_factory=A2AConfig)
     honcho: HonchoConfig = Field(default_factory=HonchoConfig)
     auxiliary: AuxiliaryConfig = Field(default_factory=AuxiliaryConfig)
+    webhooks: WebhooksConfig = Field(default_factory=WebhooksConfig)
 
     @property
     def workspace_path(self) -> Path:

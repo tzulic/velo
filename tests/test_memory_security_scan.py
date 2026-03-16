@@ -163,9 +163,7 @@ class TestConsolidationSecurityBlock:
     """Tests that consolidate() returns False when a write is blocked by security scan."""
 
     @pytest.mark.asyncio
-    async def test_consolidation_fails_when_memory_update_blocked(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_consolidation_fails_when_memory_update_blocked(self, tmp_path: Path) -> None:
         """consolidate() returns False if memory_update contains injection."""
         from velo.agent.memory import MemoryStore
         from velo.providers.base import LLMResponse, ToolCallRequest
@@ -195,9 +193,7 @@ class TestConsolidationSecurityBlock:
         assert not store.memory_file.exists()
 
     @pytest.mark.asyncio
-    async def test_consolidation_fails_when_user_update_blocked(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_consolidation_fails_when_user_update_blocked(self, tmp_path: Path) -> None:
         """consolidate() returns False if user_update contains injection."""
         from velo.agent.memory import MemoryStore
         from velo.providers.base import LLMResponse, ToolCallRequest

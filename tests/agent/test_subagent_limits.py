@@ -30,18 +30,14 @@ def manager(tmp_path):
 @pytest.mark.asyncio
 async def test_depth_zero_allowed(manager):
     """Top-level spawn (depth=0) should be accepted."""
-    result = await manager.spawn(
-        "write a haiku", session_key="cli:user", depth=0
-    )
+    result = await manager.spawn("write a haiku", session_key="cli:user", depth=0)
     assert "started" in result.lower() or "subagent" in result.lower()
 
 
 @pytest.mark.asyncio
 async def test_depth_limit_blocks_nested_spawn(manager):
     """Spawn at depth >= MAX_SPAWN_DEPTH should return error string."""
-    result = await manager.spawn(
-        "spawn inside spawn", session_key="cli:user", depth=1
-    )
+    result = await manager.spawn("spawn inside spawn", session_key="cli:user", depth=1)
     assert "blocked" in result.lower() or "Error" in result
 
 

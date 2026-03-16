@@ -44,9 +44,7 @@ _BACKEND_DEFAULTS: dict[str, tuple[str | None, dict[str, str]]] = {
 }
 
 # Per-model parameter overrides (substring match).
-_MODEL_OVERRIDES: tuple[tuple[str, dict[str, Any]], ...] = (
-    ("kimi-k2.5", {"temperature": 1.0}),
-)
+_MODEL_OVERRIDES: tuple[tuple[str, dict[str, Any]], ...] = (("kimi-k2.5", {"temperature": 1.0}),)
 
 
 class OpenAIProvider(LLMProvider):
@@ -157,7 +155,13 @@ class OpenAIProvider(LLMProvider):
             LLMResponse with content and/or tool calls.
         """
         kwargs = self._build_kwargs(
-            messages, tools, model, max_tokens, temperature, reasoning_effort, tool_choice,
+            messages,
+            tools,
+            model,
+            max_tokens,
+            temperature,
+            reasoning_effort,
+            tool_choice,
         )
         try:
             response = await self._client.chat.completions.create(**kwargs)
@@ -187,7 +191,13 @@ class OpenAIProvider(LLMProvider):
             StreamChunk with incremental deltas and final metadata.
         """
         kwargs = self._build_kwargs(
-            messages, tools, model, max_tokens, temperature, reasoning_effort, tool_choice,
+            messages,
+            tools,
+            model,
+            max_tokens,
+            temperature,
+            reasoning_effort,
+            tool_choice,
         )
         kwargs["stream"] = True
         kwargs["stream_options"] = {"include_usage": True}
@@ -339,11 +349,13 @@ class OpenAIProvider(LLMProvider):
             args = tc.function.arguments
             if isinstance(args, str):
                 args = json_repair.loads(args)
-            tool_calls.append(ToolCallRequest(
-                id=tc.id or short_tool_id(),
-                name=tc.function.name,
-                arguments=args if isinstance(args, dict) else {},
-            ))
+            tool_calls.append(
+                ToolCallRequest(
+                    id=tc.id or short_tool_id(),
+                    name=tc.function.name,
+                    arguments=args if isinstance(args, dict) else {},
+                )
+            )
 
         usage = {}
         if hasattr(response, "usage") and response.usage:
@@ -394,7 +406,11 @@ def _handle_error(exc: Exception) -> LLMResponse:
         code = "auth_error"
     elif isinstance(exc, BadRequestError):
         msg_lower = error_msg.lower()
-        code = "context_overflow" if ("context" in msg_lower or "token" in msg_lower) else "bad_request"
+        code = (
+            "context_overflow"
+            if ("context" in msg_lower or "token" in msg_lower)
+            else "bad_request"
+        )
     elif isinstance(exc, InternalServerError):
         code = "server_error"
     elif isinstance(exc, APITimeoutError):

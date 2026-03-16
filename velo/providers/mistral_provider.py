@@ -18,9 +18,7 @@ from velo.providers.base import (
 )
 
 # Message keys accepted by the Mistral API (OpenAI-compatible format).
-_ALLOWED_MSG_KEYS = frozenset(
-    {"role", "content", "tool_calls", "tool_call_id", "name"}
-)
+_ALLOWED_MSG_KEYS = frozenset({"role", "content", "tool_calls", "tool_call_id", "name"})
 
 
 class MistralProvider(LLMProvider):
@@ -78,6 +76,7 @@ class MistralProvider(LLMProvider):
         if len(tool_call_id) == 9 and tool_call_id.isalnum():
             return tool_call_id
         import hashlib
+
         return hashlib.sha1(tool_call_id.encode()).hexdigest()[:9]
 
     @staticmethod
@@ -110,7 +109,8 @@ class MistralProvider(LLMProvider):
                     tc_copy = dict(tc)
                     old_id = tc_copy.get("id", "")
                     new_id = id_map.setdefault(
-                        old_id, MistralProvider._normalize_tool_call_id(old_id),
+                        old_id,
+                        MistralProvider._normalize_tool_call_id(old_id),
                     )
                     tc_copy["id"] = new_id
                     normalized.append(tc_copy)
@@ -120,7 +120,8 @@ class MistralProvider(LLMProvider):
             if "tool_call_id" in clean and clean["tool_call_id"]:
                 old_id = clean["tool_call_id"]
                 clean["tool_call_id"] = id_map.setdefault(
-                    old_id, MistralProvider._normalize_tool_call_id(old_id),
+                    old_id,
+                    MistralProvider._normalize_tool_call_id(old_id),
                 )
 
             result.append(clean)
@@ -191,7 +192,13 @@ class MistralProvider(LLMProvider):
             LLMResponse with content and/or tool calls.
         """
         kwargs = self._build_kwargs(
-            messages, tools, model, max_tokens, temperature, reasoning_effort, tool_choice,
+            messages,
+            tools,
+            model,
+            max_tokens,
+            temperature,
+            reasoning_effort,
+            tool_choice,
         )
         try:
             response = await self._client.chat.complete_async(**kwargs)
@@ -221,7 +228,13 @@ class MistralProvider(LLMProvider):
             StreamChunk with incremental deltas and final metadata.
         """
         kwargs = self._build_kwargs(
-            messages, tools, model, max_tokens, temperature, reasoning_effort, tool_choice,
+            messages,
+            tools,
+            model,
+            max_tokens,
+            temperature,
+            reasoning_effort,
+            tool_choice,
         )
         try:
             stream = await self._client.chat.stream_async(**kwargs)
@@ -319,11 +332,13 @@ class MistralProvider(LLMProvider):
                 args = fn.arguments
                 if isinstance(args, str):
                     args = json_repair.loads(args)
-                tool_calls.append(ToolCallRequest(
-                    id=short_tool_id(),
-                    name=fn.name,
-                    arguments=args if isinstance(args, dict) else {},
-                ))
+                tool_calls.append(
+                    ToolCallRequest(
+                        id=short_tool_id(),
+                        name=fn.name,
+                        arguments=args if isinstance(args, dict) else {},
+                    )
+                )
 
         usage = {}
         if response.usage:

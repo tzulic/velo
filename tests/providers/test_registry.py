@@ -15,7 +15,9 @@ class TestProviderSpec:
     def test_all_have_provider_type(self) -> None:
         valid = {"anthropic", "openai", "mistral", "gemini", "azure", "codex", "cli", "custom"}
         for spec in PROVIDERS:
-            assert spec.provider_type in valid, f"{spec.name} has invalid provider_type: {spec.provider_type}"
+            assert spec.provider_type in valid, (
+                f"{spec.name} has invalid provider_type: {spec.provider_type}"
+            )
 
 
 class TestFindByName:
@@ -42,14 +44,17 @@ class TestFindByName:
 
 
 class TestMistralRegistry:
-    @pytest.mark.parametrize("model", [
-        "mistral-large-latest",
-        "mistral-small-latest",
-        "magistral-small-latest",
-        "codestral-latest",
-        "devstral-small-2",
-        "ministral-3b-latest",
-    ])
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "mistral-large-latest",
+            "mistral-small-latest",
+            "magistral-small-latest",
+            "codestral-latest",
+            "devstral-small-2",
+            "ministral-3b-latest",
+        ],
+    )
     def test_model_keyword_matching(self, model: str) -> None:
         spec = find_by_model(model)
         assert spec is not None, f"No provider matched model '{model}'"

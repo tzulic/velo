@@ -33,7 +33,9 @@ class TestSubagentModelRouting:
 
     def test_subagent_uses_dedicated_model(self, make_loop) -> None:
         """When subagent_model is set, SubagentManager receives it instead of the main model."""
-        loop = make_loop(model="anthropic/claude-sonnet-4-6", subagent_model="anthropic/claude-haiku-4-5")
+        loop = make_loop(
+            model="anthropic/claude-sonnet-4-6", subagent_model="anthropic/claude-haiku-4-5"
+        )
         assert loop.subagents.model == "anthropic/claude-haiku-4-5"
 
     def test_subagent_falls_back_to_main_model(self, make_loop) -> None:

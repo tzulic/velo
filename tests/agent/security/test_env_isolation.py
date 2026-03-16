@@ -19,12 +19,15 @@ class TestBuildSafeEnv:
             assert env["USER"] == "test"
 
     def test_excludes_secrets(self):
-        with patch.dict(os.environ, {
-            "PATH": "/usr/bin",
-            "TELEGRAM_BOT_TOKEN": "secret123",
-            "DISCORD_TOKEN": "secret456",
-            "COMPOSIO_API_KEY": "secret789",
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "PATH": "/usr/bin",
+                "TELEGRAM_BOT_TOKEN": "secret123",
+                "DISCORD_TOKEN": "secret456",
+                "COMPOSIO_API_KEY": "secret789",
+            },
+        ):
             env = build_safe_env()
             assert "TELEGRAM_BOT_TOKEN" not in env
             assert "DISCORD_TOKEN" not in env

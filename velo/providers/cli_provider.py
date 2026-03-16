@@ -92,7 +92,12 @@ class CliProvider(LLMProvider):
         system_prompt = self._extract_system_prompt(messages) if not is_resume else None
 
         cmd = self._build_cmd(prompt, session_id, resolved_model, is_resume, system_prompt)
-        logger.debug("cli_provider.run: model={} resume={} session={}", resolved_model, is_resume, session_id[:8])
+        logger.debug(
+            "cli_provider.run: model={} resume={} session={}",
+            resolved_model,
+            is_resume,
+            session_id[:8],
+        )
 
         try:
             stdout, stderr = await self._run_cli(cmd)
@@ -106,6 +111,7 @@ class CliProvider(LLMProvider):
             error_msg = str(exc)
             logger.error("cli_provider.error: {}", error_msg)
             from velo.providers.errors import classify_error
+
             return LLMResponse(
                 content=f"Error calling claude CLI: {error_msg}",
                 finish_reason="error",
@@ -115,15 +121,20 @@ class CliProvider(LLMProvider):
         # If the session ID is already in use (CLI retains sessions across restarts),
         # retry with --resume so we continue the existing session instead of failing.
         if stderr and "is already in use" in stderr and not is_resume:
-            logger.debug("cli_provider.session_collision: retrying with --resume session={}", session_id[:8])
+            logger.debug(
+                "cli_provider.session_collision: retrying with --resume session={}", session_id[:8]
+            )
             self._sessions[session_key] = session_id  # mark as existing
-            cmd = self._build_cmd(prompt, session_id, resolved_model, is_resume=True, system_prompt=None)
+            cmd = self._build_cmd(
+                prompt, session_id, resolved_model, is_resume=True, system_prompt=None
+            )
             try:
                 stdout, stderr = await self._run_cli(cmd)
             except Exception as exc:
                 error_msg = str(exc)
                 logger.error("cli_provider.error: {}", error_msg)
                 from velo.providers.errors import classify_error
+
                 return LLMResponse(
                     content=f"Error calling claude CLI: {error_msg}",
                     finish_reason="error",
@@ -204,9 +215,12 @@ class CliProvider(LLMProvider):
         cmd = [
             self.cli_path,
             "--print",
-            "--output-format", "json",
-            "--permission-mode", self.permission_mode,
-            "--model", model,
+            "--output-format",
+            "json",
+            "--permission-mode",
+            self.permission_mode,
+            "--model",
+            model,
         ]
         if is_resume:
             cmd += ["--resume", session_id]
@@ -234,7 +248,9 @@ class CliProvider(LLMProvider):
         import asyncio
 
         # Unset CLAUDECODE so the subprocess can start inside a Claude Code session.
-        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CLAUDECODE_ENTRYPOINT")}
+        env = {
+            k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CLAUDECODE_ENTRYPOINT")
+        }
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,

@@ -119,7 +119,10 @@ class TestRoleAlternation:
     def test_tool_results_merged_with_user(self) -> None:
         """Tool results (user role) followed by user message are merged."""
         messages = [
-            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "x", "content": "r"}]},
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "x", "content": "r"}],
+            },
             {"role": "user", "content": "Follow-up"},
         ]
         merged = _merge_consecutive_roles(messages)

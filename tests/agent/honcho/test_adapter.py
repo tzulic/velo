@@ -123,7 +123,8 @@ class TestGetOrCreate:
         adapter = HonchoAdapter(config, workspace)
 
         with patch.object(
-            adapter, "_ensure_client",
+            adapter,
+            "_ensure_client",
             side_effect=RuntimeError("connection failed"),
         ):
             state = await adapter.get_or_create("telegram:123")
@@ -467,7 +468,9 @@ class TestAddConclusion:
         content = user_peer.aio.observations.create.call_args[1]["content"]
         assert "dark mode" in content
 
-    async def test_fallback_to_message_when_no_observations(self, config, workspace, mock_honcho_aio):
+    async def test_fallback_to_message_when_no_observations(
+        self, config, workspace, mock_honcho_aio
+    ):
         """add_conclusion falls back to add_messages when observations unavailable."""
         aio, user_peer, _, session = mock_honcho_aio
         # Reason: MagicMock auto-creates attributes on access.
