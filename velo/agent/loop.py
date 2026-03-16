@@ -170,6 +170,8 @@ class AgentLoop:
         memory_char_limit: int = 8000,
         user_char_limit: int = 4000,
         memory_nudge_interval: int = 20,
+        compress_protect_first: int = 5,
+        compress_protect_last: int = 6,
         reasoning_effort: str | None = None,
         parallel_api_key: str | None = None,
         web_proxy: str | None = None,
@@ -205,6 +207,8 @@ class AgentLoop:
         self.memory_char_limit = memory_char_limit
         self.user_char_limit = user_char_limit
         self.memory_nudge_interval = memory_nudge_interval
+        self.compress_protect_first = compress_protect_first
+        self.compress_protect_last = compress_protect_last
         self.reasoning_effort = reasoning_effort
         self.parallel_api_key = parallel_api_key
         self.web_proxy = web_proxy
@@ -565,6 +569,8 @@ class AgentLoop:
                     self.subagent_model or self.model,
                     ctx_window,
                     est_tokens=est,
+                    protect_first=self.compress_protect_first,
+                    protect_last=self.compress_protect_last,
                 )
                 if _summary:
                     last_compressed_iter = iteration
@@ -1065,6 +1071,7 @@ class AgentLoop:
         # Pattern-triggered memory nudge (fires on identity/preference signals)
         if nudge is None:  # Don't double-nudge
             from velo.agent.memory_triggers import should_trigger_memory_nudge, get_triggered_nudge
+
             if should_trigger_memory_nudge(msg.content):
                 nudge = get_triggered_nudge()
 

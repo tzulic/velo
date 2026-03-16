@@ -237,7 +237,9 @@ def _build_fallback_provider(config: Config):
     try:
         return _make_provider(config, config.agents.defaults.fallback_model)
     except SystemExit:
-        console.print("[yellow]Warning: Could not create fallback provider, continuing without.[/yellow]")
+        console.print(
+            "[yellow]Warning: Could not create fallback provider, continuing without.[/yellow]"
+        )
         return None
 
 
@@ -265,11 +267,13 @@ def _make_provider(config: Config, model: str | None = None):
     # OpenAI Codex (OAuth)
     if provider_name == "openai_codex" or model.startswith("openai-codex/"):
         from velo.providers.openai_codex_provider import OpenAICodexProvider
+
         return OpenAICodexProvider(default_model=model)
 
     # Claude CLI: invokes the claude binary directly via Claude Max subscription
     if provider_name == "claude_cli":
         from velo.providers.cli_provider import CliProvider
+
         cli_cfg = config.providers.claude_cli
         return CliProvider(
             model=cli_cfg.model,
@@ -281,6 +285,7 @@ def _make_provider(config: Config, model: str | None = None):
     # Azure OpenAI: direct Azure endpoint with deployment name
     if provider_name == "azure_openai":
         from velo.providers.azure_openai_provider import AzureOpenAIProvider
+
         if not p or not p.api_key or not p.api_base:
             console.print("[red]Error: Azure OpenAI requires api_key and api_base.[/red]")
             console.print("Set them in ~/.velo/config.json under providers.azure_openai section")
@@ -307,6 +312,7 @@ def _make_provider(config: Config, model: str | None = None):
 
     if provider_type == "anthropic":
         from velo.providers.anthropic_provider import AnthropicProvider
+
         return AnthropicProvider(
             api_key=api_key,
             api_base=api_base,
@@ -315,6 +321,7 @@ def _make_provider(config: Config, model: str | None = None):
 
     if provider_type == "mistral":
         from velo.providers.mistral_provider import MistralProvider
+
         return MistralProvider(
             api_key=api_key,
             api_base=api_base,
@@ -323,6 +330,7 @@ def _make_provider(config: Config, model: str | None = None):
 
     if provider_type == "gemini":
         from velo.providers.gemini_provider import GeminiProvider
+
         return GeminiProvider(
             api_key=api_key,
             api_base=api_base,
@@ -331,6 +339,7 @@ def _make_provider(config: Config, model: str | None = None):
 
     # Default: OpenAI-compatible (openai, deepseek, groq, xai, openrouter, custom, etc.)
     from velo.providers.openai_provider import OpenAIProvider
+
     return OpenAIProvider(
         api_key=api_key,
         api_base=api_base,
@@ -455,6 +464,8 @@ def gateway(
         memory_char_limit=config.agents.defaults.memory_char_limit,
         user_char_limit=config.agents.defaults.user_char_limit,
         memory_nudge_interval=config.agents.defaults.memory_nudge_interval,
+        compress_protect_first=config.agents.defaults.compress_protect_first,
+        compress_protect_last=config.agents.defaults.compress_protect_last,
         reasoning_effort=config.agents.defaults.reasoning_effort,
         parallel_api_key=config.tools.web.search.api_key or None,
         web_proxy=config.tools.web.proxy or None,
@@ -691,6 +702,8 @@ def agent(
         memory_char_limit=config.agents.defaults.memory_char_limit,
         user_char_limit=config.agents.defaults.user_char_limit,
         memory_nudge_interval=config.agents.defaults.memory_nudge_interval,
+        compress_protect_first=config.agents.defaults.compress_protect_first,
+        compress_protect_last=config.agents.defaults.compress_protect_last,
         reasoning_effort=config.agents.defaults.reasoning_effort,
         parallel_api_key=config.tools.web.search.api_key or None,
         web_proxy=config.tools.web.proxy or None,
@@ -1132,7 +1145,9 @@ def _login_openai_codex() -> None:
 @_register_login("github_copilot")
 def _login_github_copilot() -> None:
     console.print("[yellow]GitHub Copilot login requires manual setup.[/yellow]")
-    console.print("Set your Copilot token in ~/.velo/config.json under providers.github_copilot.api_key")
+    console.print(
+        "Set your Copilot token in ~/.velo/config.json under providers.github_copilot.api_key"
+    )
     console.print("See: https://github.com/settings/copilot for token management.")
 
 
