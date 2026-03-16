@@ -22,6 +22,18 @@ def _resolve_parallel_api_key(init_key: str | None) -> str:
     return init_key or os.environ.get("PARALLEL_API_KEY", "")
 
 
+def _resolve_parallel_base_url(init_base_url: str | None) -> str | None:
+    """Resolve Parallel.ai base URL from init value or environment.
+
+    Args:
+        init_base_url: Explicitly provided base URL (takes priority).
+
+    Returns:
+        The resolved base URL, or None to use SDK default.
+    """
+    return init_base_url or os.environ.get("PARALLEL_BASE_URL") or None
+
+
 _PARALLEL_KEY_ERROR = (
     "Error: Parallel.ai API key not configured. Set it in "
     "~/.velo/config.json under tools.web.search.apiKey "
@@ -51,25 +63,31 @@ class WebSearchTool(Tool):
     def __init__(
         self,
         api_key: str | None = None,
+        base_url: str | None = None,
         max_results: int = 5,
     ):
         """Initialize web search tool.
 
         Args:
             api_key: Parallel.ai API key. Falls back to PARALLEL_API_KEY env var.
+            base_url: Parallel.ai base URL. Falls back to PARALLEL_BASE_URL env var.
             max_results: Default number of results to return.
         """
         self._init_api_key = api_key
+        self._init_base_url = base_url
         self.max_results = max_results
         self._client: AsyncParallel | None = None
         self._client_key: str = ""
+        self._client_base_url: str | None = None
 
     def _get_client(self) -> AsyncParallel:
-        """Return a cached AsyncParallel client, recreating if API key changed."""
+        """Return a cached AsyncParallel client, recreating if config changed."""
         key = _resolve_parallel_api_key(self._init_api_key)
-        if self._client is None or key != self._client_key:
-            self._client = AsyncParallel(api_key=key)
+        base_url = _resolve_parallel_base_url(self._init_base_url)
+        if self._client is None or key != self._client_key or base_url != self._client_base_url:
+            self._client = AsyncParallel(api_key=key, base_url=base_url)
             self._client_key = key
+            self._client_base_url = base_url
         return self._client
 
     async def execute(self, query: str, count: int | None = None, **kwargs: Any) -> str:
@@ -137,25 +155,31 @@ class WebFetchTool(Tool):
     def __init__(
         self,
         api_key: str | None = None,
+        base_url: str | None = None,
         max_chars: int = 50000,
     ):
         """Initialize web fetch tool.
 
         Args:
             api_key: Parallel.ai API key. Falls back to PARALLEL_API_KEY env var.
+            base_url: Parallel.ai base URL. Falls back to PARALLEL_BASE_URL env var.
             max_chars: Maximum characters to return in content.
         """
         self._init_api_key = api_key
+        self._init_base_url = base_url
         self.max_chars = max_chars
         self._client: AsyncParallel | None = None
         self._client_key: str = ""
+        self._client_base_url: str | None = None
 
     def _get_client(self) -> AsyncParallel:
-        """Return a cached AsyncParallel client, recreating if API key changed."""
+        """Return a cached AsyncParallel client, recreating if config changed."""
         key = _resolve_parallel_api_key(self._init_api_key)
-        if self._client is None or key != self._client_key:
-            self._client = AsyncParallel(api_key=key)
+        base_url = _resolve_parallel_base_url(self._init_base_url)
+        if self._client is None or key != self._client_key or base_url != self._client_base_url:
+            self._client = AsyncParallel(api_key=key, base_url=base_url)
             self._client_key = key
+            self._client_base_url = base_url
         return self._client
 
     async def execute(
