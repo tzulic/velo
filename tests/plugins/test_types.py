@@ -117,14 +117,31 @@ def test_register_invalid_hook_raises(tmp_path: Path) -> None:
 
 
 def test_all_hook_names_defined() -> None:
-    """HOOKS dict should contain the 6 expected hooks."""
+    """HOOKS dict should contain the 18 expected hooks."""
     expected = {
-        "on_startup",
-        "on_shutdown",
+        # Agent lifecycle
+        "before_model_resolve",
+        "before_prompt_build",
         "after_prompt_build",
+        "agent_end",
+        "before_reset",
+        # Message flow
+        "message_received",
+        "inbound_claim",
+        "message_sending",
+        "message_sent",
+        # Tool execution
         "before_tool_call",
         "after_tool_call",
-        "before_response",
+        "before_message_write",
+        # Session
+        "session_start",
+        "session_end",
+        "subagent_spawned",
+        "subagent_ended",
+        # Gateway
+        "on_startup",
+        "on_shutdown",
     }
     assert set(HOOKS.keys()) == expected
 

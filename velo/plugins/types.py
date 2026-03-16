@@ -33,19 +33,36 @@ HookFn = Callable[..., Any]
 ContextProvider = Union[Callable[[], str], Callable[[], Awaitable[str]]]
 """Returns extra context to inject into the system prompt. May be sync or async."""
 
-HookType = Literal["fire_and_forget", "modifying"]
+HookType = Literal["fire_and_forget", "modifying", "claiming"]
 
 # ---------------------------------------------------------------------------
 # Hook definitions
 # ---------------------------------------------------------------------------
 
 HOOKS: dict[str, HookType] = {
-    "on_startup": "fire_and_forget",
-    "on_shutdown": "fire_and_forget",
+    # Agent lifecycle
+    "before_model_resolve": "modifying",
+    "before_prompt_build": "modifying",
     "after_prompt_build": "modifying",
+    "agent_end": "fire_and_forget",
+    "before_reset": "fire_and_forget",
+    # Message flow
+    "message_received": "fire_and_forget",
+    "inbound_claim": "claiming",
+    "message_sending": "modifying",
+    "message_sent": "fire_and_forget",
+    # Tool execution
     "before_tool_call": "modifying",
     "after_tool_call": "modifying",
-    "before_response": "modifying",
+    "before_message_write": "modifying",
+    # Session
+    "session_start": "fire_and_forget",
+    "session_end": "fire_and_forget",
+    "subagent_spawned": "fire_and_forget",
+    "subagent_ended": "fire_and_forget",
+    # Gateway
+    "on_startup": "fire_and_forget",
+    "on_shutdown": "fire_and_forget",
 }
 
 
