@@ -1,0 +1,46 @@
+{
+  "id": "campaign-reporter",
+  "name": "Campaign Reporter",
+  "version": "1.0.0",
+  "description": "Structured marketing report storage with trend tracking and period comparison. Generates scheduled weekly reports.",
+  "category": "vertical",
+  "tags": ["marketing", "analytics", "reporting", "campaigns"],
+  "config_schema": {
+    "schedule_day": {
+      "type": "string",
+      "default": "monday",
+      "enum": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+      "label": "Day to generate weekly report"
+    },
+    "schedule_time": {
+      "type": "string",
+      "default": "09:00",
+      "label": "Time to generate report (HH:MM, in customer's timezone from config)"
+    },
+    "timezone": {
+      "type": "string",
+      "default": "UTC",
+      "label": "Timezone for scheduled reports (IANA format)"
+    },
+    "max_reports": {
+      "type": "integer",
+      "default": 200,
+      "label": "Maximum reports stored",
+      "advanced": true
+    }
+  },
+  "requires": {
+    "channels": [],
+    "env": [],
+    "plugins": []
+  },
+  "hooks": [],
+  "tools": ["save_report", "get_report", "compare_periods", "list_reports"],
+  "services": true,
+  "context_provider": true,
+  "used_by_templates": [],
+  "ui_hints": {
+    "icon": "bar-chart",
+    "color": "teal"
+  }
+}
