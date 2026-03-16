@@ -599,6 +599,11 @@ def gateway(
     console.print(f"[green]✓[/green] Heartbeat: every {hb_cfg.interval_s}s")
 
     async def run():
+        # Start plugin HTTP server if routes are registered
+        from velo.plugins.http import PluginHttpServer
+
+        http_server: PluginHttpServer | None = None
+
         try:
             await _activate_plugins(plugin_mgr, agent, provider, bus)
 
@@ -606,6 +611,25 @@ def gateway(
             plugin_channels = plugin_mgr.get_plugin_channels()
             if plugin_channels:
                 channels.add_plugin_channels(plugin_channels)
+
+            # Start plugin HTTP server if any routes were registered
+            if plugin_mgr.http_routes:
+                from velo.plugins.http import RouteTable
+
+                route_table = RouteTable()
+                for route in plugin_mgr.http_routes:
+                    route_table.register(
+                        method=route["method"],
+                        path=route["path"],
+                        handler=route["handler"],
+                        plugin_name=route["plugin_name"],
+                    )
+                http_server = PluginHttpServer(route_table, port=port)
+                await http_server.start()
+                console.print(
+                    f"[green]✓[/green] Plugin HTTP server: port {port} "
+                    f"({len(plugin_mgr.http_routes)} route(s))"
+                )
 
             await cron.start()
             await heartbeat.start()
@@ -621,6 +645,8 @@ def gateway(
         except KeyboardInterrupt:
             console.print("\nShutting down...")
         finally:
+            if http_server:
+                await http_server.stop()
             await plugin_mgr.shutdown()
             await agent.cleanup()
             heartbeat.stop()
