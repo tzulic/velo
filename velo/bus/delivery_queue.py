@@ -14,9 +14,12 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from velo.plugins.manager import PluginManager
 
 # Retry backoff schedule (seconds): 5, 25, 120, 600, 600
 _BACKOFF_SCHEDULE = [5, 25, 120, 600, 600]
@@ -43,6 +46,15 @@ class DeliveryQueue:
         self.failed_dir = base_dir / "outbound" / "failed"
         self.pending_dir.mkdir(parents=True, exist_ok=True)
         self.failed_dir.mkdir(parents=True, exist_ok=True)
+        self.plugin_manager: PluginManager | None = None
+
+    def set_plugin_manager(self, manager: "PluginManager") -> None:
+        """Set the plugin manager for hook dispatch.
+
+        Args:
+            manager: PluginManager instance to use for firing hooks.
+        """
+        self.plugin_manager = manager
 
     # ------------------------------------------------------------------
     # Public API
@@ -64,6 +76,15 @@ class DeliveryQueue:
             await publish_fn(message)
             msg_file.unlink(missing_ok=True)
             logger.debug("delivery_queue.delivered: {}", msg_file.name)
+
+            # Plugin hook: message_sent (fire-and-forget, after successful delivery)
+            if self.plugin_manager:
+                await self.plugin_manager.fire(
+                    "message_sent",
+                    content=message.get("content", ""),
+                    channel=message.get("channel", ""),
+                    chat_id=message.get("chat_id", ""),
+                )
         except Exception as e:
             error_str = str(e)
             if self._is_permanent(error_str):

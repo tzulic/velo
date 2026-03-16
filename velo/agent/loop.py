@@ -262,6 +262,7 @@ class AgentLoop:
             browse_config=self._browse_config,
             exec_config=self.exec_config,
             restrict_to_workspace=restrict_to_workspace,
+            plugin_manager=plugin_manager,
         )
 
         self._running = False
@@ -287,6 +288,10 @@ class AgentLoop:
         # Interrupt mechanism: per-session events for cancelling stale processing.
         # Cleaned up in _handle_stop and when sessions have no active tasks.
         self._interrupt_events: dict[str, asyncio.Event] = {}
+        # Plugin session tracking: fire session_start on first message, session_end on idle/reset.
+        self._seen_sessions: set[str] = set()
+        self._last_activity: dict[str, float] = {}
+        self._session_idle_timeout: float = 30 * 60  # 30 minutes
         self._register_default_tools(a2a_peers, clarify_callback)
         self._register_plugin_tools()
 
@@ -586,10 +591,21 @@ class AgentLoop:
                 token_budget = int(ctx_window * PROACTIVE_TRIM_TARGET)
                 messages = trim_to_budget(messages, token_budget)
 
+            # Plugin hook: before_model_resolve (modifying, allows per-turn model override)
+            _resolved_model = self.model
+            if self.plugin_manager:
+                override = await self.plugin_manager.pipe(
+                    "before_model_resolve",
+                    value={"model": self.model, "provider": ""},
+                    model=self.model,
+                )
+                if isinstance(override, dict) and override.get("model"):
+                    _resolved_model = override["model"]
+
             llm_kwargs: dict[str, Any] = {
                 "messages": messages,
                 "tools": tool_defs,
-                "model": self.model,
+                "model": _resolved_model,
                 "temperature": self.temperature,
                 "max_tokens": self.max_tokens,
                 "reasoning_effort": self.reasoning_effort,
@@ -758,14 +774,20 @@ class AgentLoop:
                 "without completing the task. You can try breaking the task into smaller steps."
             )
 
-        # Plugin hook: before_response
+        # Plugin hook: message_sending (replaces before_response)
         if final_content and self.plugin_manager:
-            final_content = await self.plugin_manager.pipe(
-                "before_response",
+            result = await self.plugin_manager.pipe(
+                "message_sending",
                 value=final_content,
-                channel="",
-                chat_id="",
+                channel=session_key.split(":")[0] if ":" in session_key else "",
+                chat_id=session_key.split(":", 1)[1] if ":" in session_key else "",
             )
+            if isinstance(result, dict) and result.get("cancel"):
+                final_content = None
+            elif isinstance(result, dict) and "content" in result:
+                final_content = result["content"]
+            elif isinstance(result, str):
+                final_content = result
 
         # Record usage metrics
         if total_tokens_in > 0 or total_tokens_out > 0:
@@ -785,6 +807,13 @@ class AgentLoop:
                 )
             except Exception as e:
                 logger.warning("usage.record_error: {}", e)
+
+        # Plugin hook: agent_end (fire-and-forget, non-blocking)
+        if self.plugin_manager:
+            duration_ms = int(time.monotonic() * 1000) - start_ms
+            await self.plugin_manager.fire(
+                "agent_end", messages=messages, duration_ms=duration_ms
+            )
 
         return final_content, tools_used, messages
 
@@ -980,7 +1009,7 @@ class AgentLoop:
                 deferred_tools_hint=deferred_hint,
             )
             final_content, _, all_msgs = await self._run_agent_loop(messages, session_key=key)
-            self._save_turn(session, all_msgs, 1 + len(history))
+            await self._save_turn(session, all_msgs, 1 + len(history))
             self.sessions.save(session)
             return OutboundMessage(
                 channel=channel,
@@ -991,8 +1020,56 @@ class AgentLoop:
         preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
         logger.info("Processing message from {}:{}: {}", msg.channel, msg.sender_id, preview)
 
+        # Plugin hook: message_received (fire-and-forget, non-blocking)
+        if self.plugin_manager:
+            await self.plugin_manager.fire(
+                "message_received",
+                content=msg.content,
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                metadata=msg.metadata or {},
+            )
+
+        # Plugin hook: inbound_claim (first-claim-wins, lets plugins intercept messages)
+        if self.plugin_manager:
+            claim = await self.plugin_manager.claim(
+                "inbound_claim",
+                content=msg.content,
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+            )
+            if claim and claim.get("handled"):
+                return None
+
         key = session_key or msg.session_key
         session = self.sessions.get_or_create(key)
+
+        # Plugin hooks: session_start (first message) and session_end (idle timeout)
+        if self.plugin_manager:
+            now = time.monotonic()
+            # Check idle timeout: if the last activity was >30 min ago, fire session_end
+            # for the old session and treat this as a new session.
+            last = self._last_activity.get(key)
+            if last is not None and (now - last) > self._session_idle_timeout:
+                if key in self._seen_sessions:
+                    await self.plugin_manager.fire(
+                        "session_end",
+                        session_key=key,
+                        message_count=len(session.messages),
+                        duration_ms=int((now - last) * 1000),
+                    )
+                    self._seen_sessions.discard(key)
+
+            # Fire session_start on first message for this session
+            if key not in self._seen_sessions:
+                self._seen_sessions.add(key)
+                await self.plugin_manager.fire(
+                    "session_start",
+                    session_key=key,
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                )
+            self._last_activity[key] = now
 
         # Slash commands
         cmd = msg.content.strip().lower()
@@ -1020,6 +1097,19 @@ class AgentLoop:
                 )
             finally:
                 self._consolidating.discard(session.key)
+
+            # Plugin hooks: session_end + before_reset (fire-and-forget, before clearing)
+            if self.plugin_manager:
+                if session.key in self._seen_sessions:
+                    await self.plugin_manager.fire(
+                        "session_end",
+                        session_key=session.key,
+                        message_count=len(session.messages),
+                        duration_ms=0,
+                    )
+                    self._seen_sessions.discard(session.key)
+                    self._last_activity.pop(session.key, None)
+                await self.plugin_manager.fire("before_reset", session_key=session.key)
 
             session.clear()
             self.sessions.save(session)
@@ -1122,7 +1212,7 @@ class AgentLoop:
         if final_content is None:
             final_content = "I've completed processing but have no response to give."
 
-        self._save_turn(session, all_msgs, 1 + len(history))
+        await self._save_turn(session, all_msgs, 1 + len(history))
         self.sessions.save(session)
         self._save_trajectory(all_msgs, session.key, completed=True)
 
@@ -1145,7 +1235,7 @@ class AgentLoop:
             metadata=msg.metadata or {},
         )
 
-    def _save_turn(self, session: Session, messages: list[dict], skip: int) -> None:
+    async def _save_turn(self, session: Session, messages: list[dict], skip: int) -> None:
         """Save new-turn messages into session, truncating large tool results."""
         for m in messages[skip:]:
             entry = dict(m)
@@ -1193,6 +1283,15 @@ class AgentLoop:
                     if not filtered:
                         continue
                     entry["content"] = filtered
+
+            # Plugin hook: before_message_write (modifying, can block writes)
+            if self.plugin_manager:
+                result = await self.plugin_manager.pipe("before_message_write", value=entry)
+                if isinstance(result, dict) and result.get("__block"):
+                    continue
+                if isinstance(result, dict):
+                    entry = result
+
             entry.setdefault("timestamp", datetime.now().isoformat())
             session.messages.append(entry)
         session.updated_at = datetime.now()
