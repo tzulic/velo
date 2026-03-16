@@ -1,34 +1,32 @@
 """Tests for the contact-manager plugin."""
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-# Add the plugin directory to the path so we can import it directly.
-# The plugin is loaded via importlib at runtime, not installed as a package.
-sys.path.insert(
-    0,
-    str(
-        Path(__file__).resolve().parents[2]
-        / "library"
-        / "plugins"
-        / "horizontal"
-        / "contact-manager"
-    ),
-)
+# Load the plugin via importlib to avoid sys.path collisions with other plugin tests.
+import importlib.util
 
-# ruff: noqa: E402
-from __init__ import (  # type: ignore[import]
-    AddContactTool,
-    ContactStore,
-    DedupeContactsTool,
-    DeleteContactTool,
-    EnrichContactTool,
-    FindContactsTool,
-    UpdateContactTool,
+_plugin_path = (
+    Path(__file__).resolve().parents[2]
+    / "library"
+    / "plugins"
+    / "horizontal"
+    / "contact-manager"
+    / "__init__.py"
 )
+_spec = importlib.util.spec_from_file_location("contact_manager", _plugin_path)
+_mod = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
+_spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+
+AddContactTool = _mod.AddContactTool
+ContactStore = _mod.ContactStore
+DedupeContactsTool = _mod.DedupeContactsTool
+DeleteContactTool = _mod.DeleteContactTool
+EnrichContactTool = _mod.EnrichContactTool
+FindContactsTool = _mod.FindContactsTool
+UpdateContactTool = _mod.UpdateContactTool
 
 
 # ---------------------------------------------------------------------------

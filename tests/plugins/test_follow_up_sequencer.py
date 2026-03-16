@@ -1,35 +1,33 @@
 """Tests for the follow-up-sequencer plugin."""
 
 import json
-import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
-# Add the plugin directory to the path so we can import it directly.
-# The plugin is loaded via importlib at runtime, not installed as a package.
-sys.path.insert(
-    0,
-    str(
-        Path(__file__).resolve().parents[2]
-        / "library"
-        / "plugins"
-        / "vertical"
-        / "sdr"
-        / "follow-up-sequencer"
-    ),
-)
+# Load the plugin via importlib to avoid sys.path collisions with other plugin tests.
+import importlib.util
 
-# ruff: noqa: E402
-from __init__ import (  # type: ignore[import]
-    CancelSequenceTool,
-    CreateSequenceTool,
-    ListSequencesTool,
-    PauseSequenceTool,
-    ResumeSequenceTool,
-    SequenceStore,
+_plugin_path = (
+    Path(__file__).resolve().parents[2]
+    / "library"
+    / "plugins"
+    / "vertical"
+    / "sdr"
+    / "follow-up-sequencer"
+    / "__init__.py"
 )
+_spec = importlib.util.spec_from_file_location("follow_up_sequencer", _plugin_path)
+_mod = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
+_spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+
+CancelSequenceTool = _mod.CancelSequenceTool
+CreateSequenceTool = _mod.CreateSequenceTool
+ListSequencesTool = _mod.ListSequencesTool
+PauseSequenceTool = _mod.PauseSequenceTool
+ResumeSequenceTool = _mod.ResumeSequenceTool
+SequenceStore = _mod.SequenceStore
 
 # ---------------------------------------------------------------------------
 # Helpers
