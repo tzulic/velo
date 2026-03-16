@@ -64,14 +64,23 @@ def _parse_tool_def(tool_def: Any) -> tuple[str, str, dict[str, Any]] | None:
     return slug, desc, params
 
 
-def setup(ctx: PluginContext) -> None:
-    """Plugin entry point — discover and register Composio tools.
+def register(ctx: PluginContext) -> None:
+    """Plugin entry point — placeholder for composio (tools loaded in activate).
+
+    Args:
+        ctx: Plugin context with config and workspace.
+    """
+    logger.debug("composio_plugin.register: will discover tools in activate()")
+
+
+async def activate(ctx: PluginContext) -> None:
+    """Discover and register Composio tools (requires I/O).
 
     Args:
         ctx: Plugin context with config and workspace.
     """
     if not _HAS_COMPOSIO:
-        logger.warning("composio_plugin.setup: composio package not installed, skipping")
+        logger.warning("composio_plugin.activate: composio package not installed, skipping")
         return
 
     api_key = os.environ.get("COMPOSIO_API_KEY", "")
@@ -79,7 +88,7 @@ def setup(ctx: PluginContext) -> None:
 
     if not api_key or not user_id:
         logger.debug(
-            "composio_plugin.setup: skipped (COMPOSIO_API_KEY or COMPOSIO_USER_ID not set)"
+            "composio_plugin.activate: skipped (COMPOSIO_API_KEY or COMPOSIO_USER_ID not set)"
         )
         return
 
@@ -89,7 +98,7 @@ def setup(ctx: PluginContext) -> None:
         session = composio.create(user_id=user_id)
         tools = session.tools()
     except Exception as exc:
-        logger.warning("composio_plugin.setup: failed to load tools: {}", exc)
+        logger.warning("composio_plugin.activate: failed to load tools: {}", exc)
         return
 
     registered = 0
@@ -109,4 +118,4 @@ def setup(ctx: PluginContext) -> None:
         ctx.register_tool(wrapper, deferred=True)
         registered += 1
 
-    logger.info("composio_plugin.setup: registered {} tools (deferred)", registered)
+    logger.info("composio_plugin.activate: registered {} tools (deferred)", registered)

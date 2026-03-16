@@ -1,0 +1,39 @@
+{
+  "id": "heartbeat",
+  "name": "Heartbeat",
+  "version": "1.0.0",
+  "description": "Proactive wake-up service that periodically checks HEARTBEAT.md and executes scheduled tasks.",
+  "category": "horizontal",
+  "tags": ["heartbeat", "proactive", "scheduling", "automation"],
+  "config_schema": {
+    "enabled": {
+      "type": "boolean",
+      "label": "Enabled",
+      "help": "Whether the heartbeat service is active. Disabled by default.",
+      "default": false,
+      "required": false,
+      "sensitive": false,
+      "advanced": false
+    },
+    "interval_s": {
+      "type": "integer",
+      "label": "Interval (seconds)",
+      "help": "How often to check for pending heartbeat tasks.",
+      "default": 1800,
+      "required": false,
+      "sensitive": false,
+      "advanced": false
+    }
+  },
+  "requires": {
+    "channels": [],
+    "env": [],
+    "plugins": []
+  },
+  "hooks": [],
+  "tools": [],
+  "services": true,
+  "context_provider": false,
+  "used_by_templates": [],
+  "ui_hints": {}
+}

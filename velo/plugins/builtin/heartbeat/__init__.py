@@ -90,8 +90,8 @@ class HeartbeatPlugin:
             self._service.stop()
 
 
-def setup(ctx: PluginContext) -> None:
-    """Plugin entry point — register the heartbeat service.
+def register(ctx: PluginContext) -> None:
+    """Plugin entry point — prepare the heartbeat plugin.
 
     Args:
         ctx: Plugin context with config and workspace.
@@ -104,9 +104,22 @@ def setup(ctx: PluginContext) -> None:
         interval_s=interval_s,
         enabled=enabled,
     )
-    ctx.register_service(plugin)
+
+    # Reason: store on ctx so activate() can register the service
+    ctx._heartbeat_plugin = plugin  # type: ignore[attr-defined]
+
     logger.debug(
-        "heartbeat_plugin.setup: enabled={}, interval_s={}",
+        "heartbeat_plugin.register: enabled={}, interval_s={}",
         enabled,
         interval_s,
     )
+
+
+async def activate(ctx: PluginContext) -> None:
+    """Activate the heartbeat background service.
+
+    Args:
+        ctx: Plugin context with config and workspace.
+    """
+    plugin: HeartbeatPlugin = ctx._heartbeat_plugin  # type: ignore[attr-defined]
+    ctx.register_service(plugin)

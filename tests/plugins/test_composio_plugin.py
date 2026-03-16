@@ -69,23 +69,25 @@ def _make_wrapper(**overrides) -> ComposioToolWrapper:
 
 
 # ---------------------------------------------------------------------------
-# Plugin setup() tests
+# Plugin register()/activate() tests
 # ---------------------------------------------------------------------------
 
 
 class TestComposioPluginSetup:
-    """Tests for the composio plugin setup() entry point."""
+    """Tests for the composio plugin register()/activate() entry points."""
 
+    @pytest.mark.asyncio
     @patch.dict("os.environ", {"COMPOSIO_API_KEY": "sk-test", "COMPOSIO_USER_ID": "u1"})
     @patch("velo.plugins.builtin.composio.Composio")
-    def test_setup_registers_tools(self, mock_composio_cls) -> None:
-        """setup() registers deferred tools for each connected toolkit tool."""
+    async def test_setup_registers_tools(self, mock_composio_cls) -> None:
+        """activate() registers deferred tools for each connected toolkit tool."""
         mock_composio_cls.return_value = _mock_composio()
 
-        from velo.plugins.builtin.composio import setup
+        from velo.plugins.builtin.composio import activate, register
 
         ctx = PluginContext("composio", {}, Path("/tmp"))
-        setup(ctx)
+        register(ctx)
+        await activate(ctx)
 
         tools = ctx._collect_tools()
         assert len(tools) == 2
@@ -95,55 +97,64 @@ class TestComposioPluginSetup:
         assert "composio_gmail_send_email" in names
         assert "composio_gmail_list_emails" in names
 
+    @pytest.mark.asyncio
     @patch.dict("os.environ", {}, clear=True)
-    def test_setup_missing_env_vars(self) -> None:
+    async def test_setup_missing_env_vars(self) -> None:
         """No env vars → no tools registered, no crash."""
-        from velo.plugins.builtin.composio import setup
+        from velo.plugins.builtin.composio import activate, register
 
         ctx = PluginContext("composio", {}, Path("/tmp"))
-        setup(ctx)
+        register(ctx)
+        await activate(ctx)
 
         assert len(ctx._collect_tools()) == 0
 
+    @pytest.mark.asyncio
     @patch.dict("os.environ", {"COMPOSIO_API_KEY": "", "COMPOSIO_USER_ID": "u1"})
-    def test_setup_empty_api_key(self) -> None:
+    async def test_setup_empty_api_key(self) -> None:
         """Empty API key → skip gracefully."""
-        from velo.plugins.builtin.composio import setup
+        from velo.plugins.builtin.composio import activate, register
 
         ctx = PluginContext("composio", {}, Path("/tmp"))
-        setup(ctx)
+        register(ctx)
+        await activate(ctx)
 
         assert len(ctx._collect_tools()) == 0
 
+    @pytest.mark.asyncio
     @patch.dict("os.environ", {"COMPOSIO_API_KEY": "sk-test", "COMPOSIO_USER_ID": "u1"})
     @patch("velo.plugins.builtin.composio.Composio")
-    def test_setup_sdk_error(self, mock_composio_cls) -> None:
+    async def test_setup_sdk_error(self, mock_composio_cls) -> None:
         """SDK throws → log warning, no crash, no tools."""
         mock_composio_cls.side_effect = RuntimeError("connection failed")
 
-        from velo.plugins.builtin.composio import setup
+        from velo.plugins.builtin.composio import activate, register
 
         ctx = PluginContext("composio", {}, Path("/tmp"))
-        setup(ctx)
+        register(ctx)
+        await activate(ctx)
 
         assert len(ctx._collect_tools()) == 0
 
+    @pytest.mark.asyncio
     @patch.dict("os.environ", {"COMPOSIO_API_KEY": "sk-test", "COMPOSIO_USER_ID": "u1"})
     @patch("velo.plugins.builtin.composio.Composio")
-    def test_setup_empty_tools(self, mock_composio_cls) -> None:
+    async def test_setup_empty_tools(self, mock_composio_cls) -> None:
         """No connected toolkits → zero tools, no crash."""
         mock_composio_cls.return_value = _mock_composio(tools=[])
 
-        from velo.plugins.builtin.composio import setup
+        from velo.plugins.builtin.composio import activate, register
 
         ctx = PluginContext("composio", {}, Path("/tmp"))
-        setup(ctx)
+        register(ctx)
+        await activate(ctx)
 
         assert len(ctx._collect_tools()) == 0
 
+    @pytest.mark.asyncio
     @patch.dict("os.environ", {"COMPOSIO_API_KEY": "sk-test", "COMPOSIO_USER_ID": "u1"})
     @patch("velo.plugins.builtin.composio.Composio")
-    def test_setup_handles_raw_tool_objects(self, mock_composio_cls) -> None:
+    async def test_setup_handles_raw_tool_objects(self, mock_composio_cls) -> None:
         """Handles raw Composio Tool objects (not dicts) gracefully."""
         raw_tool = MagicMock()
         raw_tool.slug = "SLACK_SEND_MESSAGE"
@@ -155,28 +166,31 @@ class TestComposioPluginSetup:
         client = _mock_composio(tools=[raw_tool])
         mock_composio_cls.return_value = client
 
-        from velo.plugins.builtin.composio import setup
+        from velo.plugins.builtin.composio import activate, register
 
         ctx = PluginContext("composio", {}, Path("/tmp"))
-        setup(ctx)
+        register(ctx)
+        await activate(ctx)
 
         tools = ctx._collect_tools()
         assert len(tools) == 1
         assert tools[0][0].name == "composio_slack_send_message"
 
+    @pytest.mark.asyncio
     @patch.dict("os.environ", {"COMPOSIO_API_KEY": "sk-test", "COMPOSIO_USER_ID": "u1"})
     @patch("velo.plugins.builtin.composio.Composio")
-    def test_setup_skips_nameless_tools(self, mock_composio_cls) -> None:
+    async def test_setup_skips_nameless_tools(self, mock_composio_cls) -> None:
         """Tools with no name are skipped with a warning, not registered as 'unknown'."""
         nameless_tool = {"type": "function", "function": {"description": "no name here"}}
         valid_tool = SAMPLE_TOOLS[0]
 
         mock_composio_cls.return_value = _mock_composio(tools=[nameless_tool, valid_tool])
 
-        from velo.plugins.builtin.composio import setup
+        from velo.plugins.builtin.composio import activate, register
 
         ctx = PluginContext("composio", {}, Path("/tmp"))
-        setup(ctx)
+        register(ctx)
+        await activate(ctx)
 
         tools = ctx._collect_tools()
         assert len(tools) == 1
