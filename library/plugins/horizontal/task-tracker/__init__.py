@@ -197,22 +197,29 @@ class TaskStore:
         return result
 
     def get_summary(self) -> dict[str, int]:
-        """Get task counts for context provider.
+        """Get task counts for context provider (single-pass).
 
         Returns:
             Dict with active, high, due_today, and overdue counts.
         """
-        active = [t for t in self._tasks if t["status"] not in DONE_STATUSES]
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        return {
-            "active": len(active),
-            "high": sum(1 for t in active if t["priority"] == "high"),
-            "due_today": sum(1 for t in active if t.get("due_date") == today),
-            "overdue": sum(
-                1 for t in active
-                if t.get("due_date") and t["due_date"] < today
-            ),
-        }
+        active = 0
+        high = 0
+        due_today = 0
+        overdue = 0
+        for t in self._tasks:
+            if t["status"] in DONE_STATUSES:
+                continue
+            active += 1
+            if t["priority"] == "high":
+                high += 1
+            due = t.get("due_date", "")
+            if due:
+                if due == today:
+                    due_today += 1
+                elif due < today:
+                    overdue += 1
+        return {"active": active, "high": high, "due_today": due_today, "overdue": overdue}
 
     def context_string(self) -> str:
         """One-line context for system prompt injection.
@@ -275,7 +282,7 @@ class CreateTaskTool(Tool):
                 },
                 "priority": {
                     "type": "string",
-                    "enum": ["high", "medium", "low"],
+                    "enum": sorted(VALID_PRIORITIES),
                     "default": "medium",
                 },
                 "due_date": {
@@ -349,14 +356,14 @@ class UpdateTaskTool(Tool):
                 },
                 "status": {
                     "type": "string",
-                    "enum": ["pending", "in_progress", "done", "cancelled"],
+                    "enum": sorted(VALID_STATUSES),
                     "default": "",
                 },
                 "title": {"type": "string", "default": ""},
                 "description": {"type": "string", "default": ""},
                 "priority": {
                     "type": "string",
-                    "enum": ["high", "medium", "low"],
+                    "enum": sorted(VALID_PRIORITIES),
                     "default": "",
                 },
                 "due_date": {"type": "string", "default": ""},
