@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -13,11 +14,36 @@ from velo.plugins.manager import PluginManager
 # ---------------------------------------------------------------------------
 
 
-def _write_plugin(base_dir: Path, name: str, setup_code: str) -> Path:
-    """Create a plugin package under base_dir/plugins/{name}/__init__.py."""
+def _write_plugin(
+    base_dir: Path,
+    name: str,
+    code: str,
+    *,
+    manifest: dict | None = None,
+) -> Path:
+    """Create a plugin package under base_dir/plugins/{name}/ with plugin.json.
+
+    Args:
+        base_dir: Workspace directory.
+        name: Plugin name.
+        code: Python code for __init__.py.
+        manifest: Custom manifest dict. Defaults to minimal valid manifest.
+
+    Returns:
+        Path to the created plugin directory.
+    """
     plugin_dir = base_dir / "plugins" / name
     plugin_dir.mkdir(parents=True, exist_ok=True)
-    (plugin_dir / "__init__.py").write_text(setup_code, encoding="utf-8")
+    (plugin_dir / "__init__.py").write_text(code, encoding="utf-8")
+
+    m = manifest or {
+        "id": name,
+        "name": name,
+        "version": "1.0.0",
+        "description": f"Test plugin {name}",
+        "config_schema": {},
+    }
+    (plugin_dir / "plugin.json").write_text(json.dumps(m), encoding="utf-8")
     return plugin_dir
 
 
@@ -42,21 +68,21 @@ class GreetTool(Tool):
     async def execute(self, **kwargs: Any) -> str:
         return f"Hello, {kwargs['name']}!"
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     ctx.register_tool(GreetTool())
 """
 
 _CONTEXT_PLUGIN = """
 from velo.plugins.types import PluginContext
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     ctx.add_context_provider(lambda: "Plugin context from test_context_plugin")
 """
 
 _HOOK_PLUGIN = """
 from velo.plugins.types import PluginContext
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     def modify_prompt(value: str) -> str:
         return value + "\\n[HOOK INJECTED]"
     ctx.on("after_prompt_build", modify_prompt, priority=50)
@@ -65,12 +91,12 @@ def setup(ctx: PluginContext) -> None:
 _FAILING_PLUGIN = """
 from velo.plugins.types import PluginContext
 
-def setup(ctx: PluginContext) -> None:
-    raise RuntimeError("Plugin setup intentionally failed!")
+def register(ctx: PluginContext) -> None:
+    raise RuntimeError("Plugin register intentionally failed!")
 """
 
-_NO_SETUP_PLUGIN = """
-# This plugin has no setup() function
+_NO_REGISTER_PLUGIN = """
+# This plugin has no register() function
 x = 42
 """
 
@@ -79,7 +105,7 @@ from velo.plugins.types import PluginContext
 
 _state = {"started": False, "stopped": False}
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     def on_start():
         _state["started"] = True
     def on_stop():
@@ -93,7 +119,7 @@ from velo.plugins.types import PluginContext
 
 captured_config = {}
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     captured_config.update(ctx.config)
 """
 
@@ -154,6 +180,25 @@ class TestDiscovery:
         workspace_names = [m.name for m in mgr.discover() if m.source == "workspace"]
         assert workspace_names == ["alpha", "beta"]
 
+    def test_discover_requires_manifest(self, tmp_path: Path) -> None:
+        """Plugins without plugin.json should be skipped during discovery."""
+        plugin_dir = tmp_path / "plugins" / "no_manifest"
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / "__init__.py").write_text("def register(ctx): pass\n")
+        mgr = PluginManager(workspace=tmp_path, config={})
+        workspace_metas = [m for m in mgr.discover() if m.source == "workspace"]
+        assert workspace_metas == []
+
+    def test_discover_stores_manifest(self, tmp_path: Path) -> None:
+        """Discovered plugins should have their manifest attached to PluginMeta."""
+        _write_plugin(tmp_path, "manifested", _TOOL_PLUGIN)
+        mgr = PluginManager(workspace=tmp_path, config={})
+        metas = mgr.discover()
+        workspace_metas = [m for m in metas if m.source == "workspace"]
+        assert len(workspace_metas) == 1
+        assert workspace_metas[0].manifest is not None
+        assert workspace_metas[0].manifest.id == "manifested"
+
 
 # ---------------------------------------------------------------------------
 # Loading tests
@@ -161,7 +206,7 @@ class TestDiscovery:
 
 
 class TestLoading:
-    """Tests for plugin loading and setup()."""
+    """Tests for plugin loading and register()."""
 
     @pytest.mark.asyncio
     async def test_load_registers_tool(self, tmp_path: Path) -> None:
@@ -186,7 +231,7 @@ class TestLoading:
 
     @pytest.mark.asyncio
     async def test_failing_plugin_does_not_block_others(self, tmp_path: Path) -> None:
-        """A plugin whose setup() raises should not prevent other plugins from loading."""
+        """A plugin whose register() raises should not prevent other plugins."""
         _write_plugin(tmp_path, "aaa_failing", _FAILING_PLUGIN)
         _write_plugin(tmp_path, "bbb_good", _TOOL_PLUGIN)
         mgr = PluginManager(workspace=tmp_path, config={})
@@ -196,9 +241,9 @@ class TestLoading:
         assert mgr.get_all_tools()[0][0].name == "greet"
 
     @pytest.mark.asyncio
-    async def test_no_setup_function_is_error(self, tmp_path: Path) -> None:
-        """A plugin without setup() should fail gracefully (error isolation)."""
-        _write_plugin(tmp_path, "no_setup", _NO_SETUP_PLUGIN)
+    async def test_no_register_function_is_error(self, tmp_path: Path) -> None:
+        """A plugin without register() should fail gracefully (error isolation)."""
+        _write_plugin(tmp_path, "no_register", _NO_REGISTER_PLUGIN)
         _write_plugin(tmp_path, "good_plugin", _TOOL_PLUGIN)
         mgr = PluginManager(workspace=tmp_path, config={})
         await mgr.load_all()
@@ -217,7 +262,7 @@ class TestLoading:
 
     @pytest.mark.asyncio
     async def test_plugin_receives_config(self, tmp_path: Path) -> None:
-        """Plugin config (minus 'enabled') should be passed to setup()."""
+        """Plugin config (minus 'enabled') should be passed to register()."""
         _write_plugin(tmp_path, "cfg_plugin", _CONFIG_PLUGIN)
         mgr = PluginManager(
             workspace=tmp_path,
@@ -254,7 +299,7 @@ class TestHookDispatch:
         plugin_code = """
 from velo.plugins.types import PluginContext
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     ctx.on("after_prompt_build", lambda value: value + " [B]", priority=200)
     ctx.on("after_prompt_build", lambda value: value + " [A]", priority=10)
 """
@@ -270,7 +315,7 @@ def setup(ctx: PluginContext) -> None:
         plugin_code = """
 from velo.plugins.types import PluginContext
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     def fail_hook(value):
         raise RuntimeError("boom")
     def good_hook(value):
@@ -290,7 +335,7 @@ def setup(ctx: PluginContext) -> None:
         plugin_code = """
 from velo.plugins.types import PluginContext
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     def crash():
         raise RuntimeError("startup crash")
     ctx.on("on_startup", crash)
@@ -308,7 +353,7 @@ from velo.plugins.types import PluginContext
 
 results = []
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     def crash():
         raise RuntimeError("boom")
     def succeed():
@@ -352,7 +397,7 @@ def setup(ctx: PluginContext) -> None:
         plugin_code = """
 from velo.plugins.types import PluginContext
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     async def async_modify(value):
         return value + " [ASYNC]"
     ctx.on("after_prompt_build", async_modify)
@@ -385,7 +430,7 @@ class TestContextAdditions:
         plugin_code = """
 from velo.plugins.types import PluginContext
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     async def async_ctx():
         return "async context data"
     ctx.add_context_provider(async_ctx)
@@ -402,7 +447,7 @@ def setup(ctx: PluginContext) -> None:
         plugin_code = """
 from velo.plugins.types import PluginContext
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     def fail():
         raise RuntimeError("ctx fail")
     def succeed():
@@ -427,7 +472,7 @@ class TestIntrospection:
 
     @pytest.mark.asyncio
     async def test_plugin_names(self, tmp_path: Path) -> None:
-        """plugin_names should list all discovered plugin names."""
+        """plugin_names should list all successfully registered plugin names."""
         _write_plugin(tmp_path, "alpha", _TOOL_PLUGIN)
         _write_plugin(tmp_path, "beta", _CONTEXT_PLUGIN)
         mgr = PluginManager(workspace=tmp_path, config={})

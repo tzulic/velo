@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -14,11 +15,36 @@ from velo.plugins.manager import PluginManager
 # ---------------------------------------------------------------------------
 
 
-def _write_plugin(base_dir: Path, name: str, setup_code: str) -> Path:
-    """Create a plugin package under base_dir/plugins/{name}/__init__.py."""
+def _write_plugin(
+    base_dir: Path,
+    name: str,
+    code: str,
+    *,
+    manifest: dict | None = None,
+) -> Path:
+    """Create a plugin package under base_dir/plugins/{name}/ with plugin.json.
+
+    Args:
+        base_dir: Workspace directory.
+        name: Plugin name.
+        code: Python code for __init__.py.
+        manifest: Custom manifest dict. Defaults to minimal valid manifest.
+
+    Returns:
+        Path to the created plugin directory.
+    """
     plugin_dir = base_dir / "plugins" / name
     plugin_dir.mkdir(parents=True, exist_ok=True)
-    (plugin_dir / "__init__.py").write_text(setup_code, encoding="utf-8")
+    (plugin_dir / "__init__.py").write_text(code, encoding="utf-8")
+
+    m = manifest or {
+        "id": name,
+        "name": name,
+        "version": "1.0.0",
+        "description": f"Test plugin {name}",
+        "config_schema": {},
+    }
+    (plugin_dir / "plugin.json").write_text(json.dumps(m), encoding="utf-8")
     return plugin_dir
 
 
@@ -43,7 +69,7 @@ class PingTool(Tool):
     async def execute(self, **kwargs: Any) -> str:
         return "pong"
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     ctx.register_tool(PingTool())
     ctx.add_context_provider(lambda: "Plugin: PingTool is available.")
 """
@@ -51,7 +77,7 @@ def setup(ctx: PluginContext) -> None:
 _PROMPT_HOOK_PLUGIN = """
 from velo.plugins.types import PluginContext
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     def add_footer(value: str) -> str:
         return value + "\\n\\n[Plugin Footer]"
     ctx.on("after_prompt_build", add_footer)
@@ -140,7 +166,7 @@ class TestPluginContextIntegration:
             """
 from velo.plugins.types import PluginContext
 
-def setup(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:
     ctx.add_context_provider(lambda: "workspace version")
 """,
         )

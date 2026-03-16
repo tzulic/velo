@@ -20,6 +20,7 @@ from velo.agent.tools.base import Tool
 
 if TYPE_CHECKING:
     from velo.bus.queue import MessageBus
+    from velo.plugins.manifest import PluginManifest
     from velo.providers.base import LLMProvider
     from velo.session.manager import SessionManager
 
@@ -120,6 +121,7 @@ class PluginMeta:
     source: Literal["builtin", "workspace"]
     path: Path
     enabled: bool = True
+    manifest: PluginManifest | None = None
 
 
 # ---------------------------------------------------------------------------
