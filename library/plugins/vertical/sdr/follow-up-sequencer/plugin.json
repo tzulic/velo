@@ -1,0 +1,41 @@
+{
+  "id": "follow-up-sequencer",
+  "name": "Follow-Up Sequencer",
+  "version": "1.0.0",
+  "description": "Signal-driven follow-up automation for SDR outreach. Creates multi-step follow-up sequences with configurable delays and channels.",
+  "category": "vertical",
+  "tags": ["sdr", "sales", "follow-up", "outreach"],
+  "config_schema": {
+    "check_interval_minutes": {
+      "type": "integer",
+      "default": 5,
+      "label": "Minutes between follow-up checks",
+      "advanced": true
+    },
+    "max_sequences": {
+      "type": "integer",
+      "default": 50,
+      "label": "Maximum active sequences"
+    },
+    "default_channel": {
+      "type": "string",
+      "default": "email",
+      "enum": ["email", "telegram", "whatsapp"],
+      "label": "Default delivery channel for follow-ups"
+    }
+  },
+  "requires": {
+    "channels": [],
+    "env": [],
+    "plugins": []
+  },
+  "hooks": ["agent_end"],
+  "tools": ["create_sequence", "list_sequences", "pause_sequence", "resume_sequence", "cancel_sequence"],
+  "services": true,
+  "context_provider": true,
+  "used_by_templates": ["ai-sdr"],
+  "ui_hints": {
+    "icon": "send",
+    "color": "green"
+  }
+}
