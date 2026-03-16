@@ -251,6 +251,8 @@ class AgentDefaults(Base):
     memory_char_limit: int = 8000  # Soft char limit for MEMORY.md; shown as usage % in context
     user_char_limit: int = 4000  # Soft char limit for USER.md; shown as usage % in context
     memory_nudge_interval: int = 20  # Turns between memory nudge reminders
+    compress_protect_first: int = 5  # Messages to protect at start during compression
+    compress_protect_last: int = 6  # Messages to protect at end during compression
     reasoning_effort: str | None = None  # low / medium / high — enables LLM thinking mode
     context_window: int | None = None  # Override auto-detected context window (tokens)
     subagent_model: str | None = None  # Cheaper model for subagents; defaults to main model

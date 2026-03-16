@@ -10,9 +10,17 @@ from velo.providers.base import LLMProvider
 from velo.providers.context_limits import estimate_tokens
 
 _SUMMARY_PROMPT = (
-    "Create a concise handoff summary for the assistant to continue this conversation.\n"
-    "Describe: actions taken, key results, decisions, constraints, user preferences,\n"
-    "file paths, and next steps. Be factual and concise. Target ~500 tokens."
+    "Create a structured handoff summary for the assistant to continue this conversation.\n"
+    "Return the summary in these exact sections:\n\n"
+    "SESSION_INTENT: What the user is trying to accomplish (1-2 sentences)\n\n"
+    "USER_IDENTITY: Name, timezone, preferences, communication style (if shared)\n\n"
+    "PROGRESS: Actions taken and their results (bullet points)\n\n"
+    "KEY_DECISIONS: Decisions made and their reasoning (bullet points)\n\n"
+    "ARTIFACTS: File paths, URLs, code snippets, and technical specifics referenced\n\n"
+    "NEXT_STEPS: What remains to be done\n\n"
+    "CONSTRAINTS: Requirements, limitations, or preferences the user stated\n\n"
+    "Each section acts as a checklist — populate it or write 'None' if not applicable.\n"
+    "Be factual and concise. Target ~500 tokens total."
 )
 _SUMMARY_CONTENT_TRUNCATE = 800  # Max chars per message in the summary prompt
 _SUMMARY_MAX_TOKENS = 1024  # Max tokens for the summarization LLM call
