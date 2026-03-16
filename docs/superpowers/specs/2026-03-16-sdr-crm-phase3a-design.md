@@ -8,7 +8,7 @@
 
 Phase 1 (Plugin Engine v2) upgraded the infrastructure. Phase 2 added personal assistant plugins. Phase 3A adds the highest-ROI business vertical: SDR/sales automation.
 
-The ai-sdr template already exists with a `lead-scorer` plugin. This spec adds the missing pieces to make it a complete SDR solution: automated follow-ups, contact database, and CRM synchronization.
+The ai-sdr template already exists at `~/Volos/library/templates/ai-sdr/` with a `lead-scorer` plugin at `~/Volos/library/plugins/vertical/sdr/lead-scorer/`. Both are in the Volos library (separate from the velo repo). This spec adds the missing pieces to make it a complete SDR solution: automated follow-ups, contact database, and CRM synchronization.
 
 ### Why SDR First
 
@@ -32,7 +32,7 @@ Neither Hermes Agent nor OpenClaw has any SDR/CRM plugins. Commercial AI SDR too
 | **Storage** | `workspace/sequences.json` (atomic writes) |
 | **Dependencies** | None (uses `process_direct` for sending via RuntimeAware) |
 
-### 1.2 Tools (4)
+### 1.2 Tools (5)
 
 #### `create_sequence`
 
@@ -63,8 +63,17 @@ list_sequences(status: str = "")
 pause_sequence(sequence_id: str)
 ```
 
-- Pauses an active sequence (can be resumed later)
+- Pauses an active sequence
 - Returns: confirmation or "not found"
+
+#### `resume_sequence`
+
+```
+resume_sequence(sequence_id: str)
+```
+
+- Resumes a paused sequence, recalculating `next_due_at` from now
+- Returns: confirmation with next due date, or "not found" / "not paused"
 
 #### `cancel_sequence`
 
@@ -86,10 +95,12 @@ cancel_sequence(sequence_id: str)
 
 `SequenceRunner` — a `RuntimeAware` service that checks for due follow-ups:
 
+- **Timer:** `asyncio.create_task` with sleep loop, same pattern as `HeartbeatService`
 - Runs every `check_interval_minutes` (default: 5)
 - For each active sequence: check if `next_due_at <= now`
 - If due: compose a follow-up prompt and send via `process_direct`
-- The prompt includes: lead name, step number, message hint, conversation history context
+- **Session key:** Uses `"sequencer:{sequence_id}"` — isolated from user conversations, avoids contention
+- The prompt includes: lead name, step number, message hint
 - The agent generates the actual message (not pre-written templates) — personalized via Honcho context
 - After sending: mark step as sent, advance `current_step`, calculate `next_due_at`
 - When all steps completed: set status to `completed`
@@ -97,9 +108,11 @@ cancel_sequence(sequence_id: str)
 ### 1.4 Hook: `agent_end`
 
 After each conversation turn, check if the agent made a follow-up commitment:
-- Scan the agent's response for phrases like "I'll follow up", "let me check back", "I'll send you"
-- If detected AND no active sequence exists for this contact: inject a suggestion into the response
-- `"[Tip: Consider creating a follow-up sequence for this lead with create_sequence]"`
+- The hook receives `messages` (full conversation list) and `duration_ms`
+- Extract the last assistant message from `messages` list (last entry with `role == "assistant"`)
+- Scan that message for phrases like "I'll follow up", "let me check back", "I'll send you"
+- If detected: log a suggestion. The agent's context provider already shows active sequences, so the agent will naturally see the prompt to create one.
+- **Contact matching:** Not attempted in the hook — this is a lightweight detection, not CRM sync. The agent uses its own judgment to connect the conversation to a contact.
 
 This is advisory only — the agent decides whether to act on it.
 
@@ -170,7 +183,7 @@ When no sequences: `Follow-ups: none`
     "plugins": []
   },
   "hooks": ["agent_end"],
-  "tools": ["create_sequence", "list_sequences", "pause_sequence", "cancel_sequence"],
+  "tools": ["create_sequence", "list_sequences", "pause_sequence", "resume_sequence", "cancel_sequence"],
   "services": true,
   "context_provider": true,
   "used_by_templates": ["ai-sdr"],
@@ -205,7 +218,7 @@ Single file. The `SequenceRunner` class implements `ServiceLike` + `RuntimeAware
 | **Storage** | `workspace/contacts.json` (atomic writes) |
 | **Dependencies** | None |
 
-### 2.2 Tools (5)
+### 2.2 Tools (6)
 
 #### `add_contact`
 
@@ -255,6 +268,15 @@ enrich_contact(contact_id: str)
 - Does NOT perform the search itself — the agent uses its existing web_search tool, or LinkedIn via Composio (`linkedin_get_profile`, `linkedin_search_people`) if connected
 - Marks the contact as `enriched: true` after the agent updates it
 
+#### `delete_contact`
+
+```
+delete_contact(contact_id: str)
+```
+
+- Removes a contact permanently
+- Returns: confirmation or "not found"
+
 #### `dedupe_contacts`
 
 ```
@@ -262,7 +284,7 @@ dedupe_contacts()
 ```
 
 - Scans all contacts for potential duplicates
-- Matching rules: exact email match OR (similar name + same company)
+- Matching rules: exact email match OR (same first name + same company, case-insensitive)
 - Returns groups of potential duplicates for agent review:
   ```
   Found 2 duplicate groups:
@@ -312,6 +334,7 @@ When empty: `Contacts: none`
     "tags": ["hot", "enterprise"],
     "enriched": true,
     "notes": "Met at conference, interested in AI automation",
+    "last_contacted_at": "",
     "created_at": "2026-03-16T10:00:00Z",
     "updated_at": "2026-03-16T10:00:00Z"
   }
@@ -347,7 +370,7 @@ When empty: `Contacts: none`
     "plugins": []
   },
   "hooks": [],
-  "tools": ["add_contact", "update_contact", "find_contacts", "enrich_contact", "dedupe_contacts"],
+  "tools": ["add_contact", "update_contact", "delete_contact", "find_contacts", "enrich_contact", "dedupe_contacts"],
   "services": false,
   "context_provider": true,
   "used_by_templates": ["ai-sdr", "customer-support"],
@@ -487,9 +510,9 @@ Add crm-sync skill:
 
 | File | Purpose |
 |------|---------|
-| `library/plugins/vertical/sdr/follow-up-sequencer/__init__.py` | Plugin: SequenceStore + 4 tools + service + hook + context |
+| `library/plugins/vertical/sdr/follow-up-sequencer/__init__.py` | Plugin: SequenceStore + 5 tools + service + hook + context |
 | `library/plugins/vertical/sdr/follow-up-sequencer/plugin.json` | Manifest |
-| `library/plugins/horizontal/contact-manager/__init__.py` | Plugin: ContactStore + 5 tools + context |
+| `library/plugins/horizontal/contact-manager/__init__.py` | Plugin: ContactStore + 6 tools + context |
 | `library/plugins/horizontal/contact-manager/plugin.json` | Manifest |
 | `velo/skills/crm-sync/SKILL.md` | Skill: sync decision guide |
 | `velo/skills/crm-sync/references/field-mapping.md` | CRM field mappings |
@@ -515,8 +538,8 @@ Add crm-sync skill:
 
 ### In Scope
 
-- Follow-up sequencer plugin (4 tools, background service, agent_end hook, context provider)
-- Contact manager plugin (5 tools, context provider, dedupe, enrichment prompts)
+- Follow-up sequencer plugin (5 tools, background service, agent_end hook, context provider)
+- Contact manager plugin (6 tools, context provider, dedupe, enrichment prompts)
 - CRM sync skill (SKILL.md + field mapping reference)
 - ai-sdr template manifest update
 - Tests for both plugins
