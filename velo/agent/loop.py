@@ -596,8 +596,7 @@ class AgentLoop:
             if self.plugin_manager:
                 override = await self.plugin_manager.pipe(
                     "before_model_resolve",
-                    value={"model": self.model, "provider": ""},
-                    model=self.model,
+                    value={"model": self.model},
                 )
                 if isinstance(override, dict) and override.get("model"):
                     _resolved_model = override["model"]
@@ -776,11 +775,12 @@ class AgentLoop:
 
         # Plugin hook: message_sending (replaces before_response)
         if final_content and self.plugin_manager:
+            _channel, _, _chat_id = session_key.partition(":")
             result = await self.plugin_manager.pipe(
                 "message_sending",
                 value=final_content,
-                channel=session_key.split(":")[0] if ":" in session_key else "",
-                chat_id=session_key.split(":", 1)[1] if ":" in session_key else "",
+                channel=_channel,
+                chat_id=_chat_id,
             )
             if isinstance(result, dict) and result.get("cancel"):
                 final_content = None
@@ -809,11 +809,11 @@ class AgentLoop:
                 logger.warning("usage.record_error: {}", e)
 
         # Plugin hook: agent_end (fire-and-forget, non-blocking)
+        duration_ms = int(time.monotonic() * 1000) - start_ms
         if self.plugin_manager:
-            duration_ms = int(time.monotonic() * 1000) - start_ms
-            await self.plugin_manager.fire(
+            asyncio.create_task(self.plugin_manager.fire(
                 "agent_end", messages=messages, duration_ms=duration_ms
-            )
+            ))
 
         return final_content, tools_used, messages
 
@@ -1020,15 +1020,15 @@ class AgentLoop:
         preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
         logger.info("Processing message from {}:{}: {}", msg.channel, msg.sender_id, preview)
 
-        # Plugin hook: message_received (fire-and-forget, non-blocking)
+        # Plugin hook: message_received (fire-and-forget, truly non-blocking)
         if self.plugin_manager:
-            await self.plugin_manager.fire(
+            asyncio.create_task(self.plugin_manager.fire(
                 "message_received",
                 content=msg.content,
                 channel=msg.channel,
                 chat_id=msg.chat_id,
                 metadata=msg.metadata or {},
-            )
+            ))
 
         # Plugin hook: inbound_claim (first-claim-wins, lets plugins intercept messages)
         if self.plugin_manager:

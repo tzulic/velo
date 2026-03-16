@@ -90,6 +90,10 @@ class HeartbeatPlugin:
             self._service.stop()
 
 
+# Module-level state shared between register() and activate()
+_plugin_instance: HeartbeatPlugin | None = None
+
+
 def register(ctx: PluginContext) -> None:
     """Plugin entry point — prepare the heartbeat plugin.
 
@@ -105,8 +109,8 @@ def register(ctx: PluginContext) -> None:
         enabled=enabled,
     )
 
-    # Reason: store on ctx so activate() can register the service
-    ctx._heartbeat_plugin = plugin  # type: ignore[attr-defined]
+    global _plugin_instance
+    _plugin_instance = plugin
 
     logger.debug(
         "heartbeat_plugin.register: enabled={}, interval_s={}",
@@ -121,5 +125,5 @@ async def activate(ctx: PluginContext) -> None:
     Args:
         ctx: Plugin context with config and workspace.
     """
-    plugin: HeartbeatPlugin = ctx._heartbeat_plugin  # type: ignore[attr-defined]
-    ctx.register_service(plugin)
+    if _plugin_instance is not None:
+        ctx.register_service(_plugin_instance)

@@ -156,13 +156,13 @@ class SubagentManager:
             parent_run_id,
         )
 
-        # Plugin hook: subagent_spawned (fire-and-forget)
+        # Plugin hook: subagent_spawned (fire-and-forget, non-blocking)
         if self.plugin_manager:
-            await self.plugin_manager.fire(
+            asyncio.create_task(self.plugin_manager.fire(
                 "subagent_spawned",
                 child_session_key=task_id,
                 parent_session_key=session_key or "",
-            )
+            ))
 
         return f"Subagent [{display_label}] started (id: {task_id}). I'll notify you when it completes."
 
