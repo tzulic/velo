@@ -1,8 +1,11 @@
 """Response pacing for natural message delivery on chat platforms."""
+
 from __future__ import annotations
+
 import asyncio
 import random
 from collections.abc import Iterator
+
 from velo.config.schema import PacingConfig
 
 

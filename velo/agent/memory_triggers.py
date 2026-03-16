@@ -1,5 +1,7 @@
 """Pattern-triggered memory nudges for high-value user signals."""
+
 from __future__ import annotations
+
 import re
 
 _PREFERENCE_PATTERNS: list[re.Pattern[str]] = [
