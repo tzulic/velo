@@ -175,11 +175,7 @@ Your workspace is at: {workspace_path}
 - If a tool call fails, analyze the error before retrying with a different approach.
 - Ask for clarification when the request is ambiguous.
 
-Reply directly with text for conversations. Only use the 'message' tool to send to a specific chat channel.
-
-## Skill Self-Improvement
-After completing a complex task (5+ tool calls), consider saving reusable procedures
-as skills via skill_manage. Only create skills for genuinely recurring patterns."""
+Reply directly with text for conversations. Only use the 'message' tool to send to a specific chat channel."""
 
     @staticmethod
     def _build_runtime_context(channel: str | None, chat_id: str | None) -> str:
