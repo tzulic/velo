@@ -5,11 +5,16 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from loguru import logger
 
 from velo.agent.security.command_guard import check_command
 from velo.agent.security.env_isolation import build_safe_env
 from velo.agent.tools.base import Tool
+
+if TYPE_CHECKING:
+    from velo.config.schema import ExecToolConfig
 
 # Directories that must never be used as working_dir for shell commands.
 # Resolved at module load for correct symlink handling on macOS (e.g. /etc → /private/etc).
@@ -123,6 +128,8 @@ class ExecTool(Tool):
         restrict_to_workspace: bool = False,
         path_append: str = "",
         extended_safety: bool = True,
+        exec_config: "ExecToolConfig | None" = None,
+        workspace: Path | None = None,
     ):
         """Initialize ExecTool with safety configuration.
 
@@ -134,7 +141,11 @@ class ExecTool(Tool):
             restrict_to_workspace: Block commands targeting paths outside cwd.
             path_append: Extra PATH entries appended to env.
             extended_safety: Use full deny list (True) or core-only (False).
+            exec_config: Full ExecToolConfig for sandbox routing (optional).
+            workspace: Agent workspace path used when launching Docker sandbox.
         """
+        self._exec_config = exec_config
+        self._workspace = workspace
         self.timeout = timeout
         self.working_dir = working_dir
         if deny_patterns is not None:
@@ -177,6 +188,21 @@ class ExecTool(Tool):
         blocked = check_command(command)
         if blocked:
             return json.dumps(blocked)
+
+        # Docker sandbox routing — bypass local subprocess when configured
+        if self._exec_config is not None and self._exec_config.sandbox == "docker":
+            from velo.agent.tools.sandbox import DockerSandbox
+
+            sandbox_workspace = self._workspace or Path(self.working_dir or os.getcwd())
+            sandbox = DockerSandbox(config=self._exec_config, workspace=sandbox_workspace)
+            try:
+                output, exit_code = await sandbox.execute(
+                    command, timeout=self._exec_config.docker_timeout
+                )
+                return output if exit_code == 0 else f"[exit {exit_code}] {output}"
+            except RuntimeError as exc:
+                logger.warning("exec.sandbox_fallback: {}", exc)
+                # Fall through to local execution with deny patterns
 
         cwd = working_dir or self.working_dir or os.getcwd()
         guard_error = self._guard_command(command, cwd)

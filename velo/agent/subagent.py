@@ -197,6 +197,8 @@ class SubagentManager:
                         timeout=self.exec_config.timeout,
                         restrict_to_workspace=self.restrict_to_workspace,
                         path_append=self.exec_config.path_append,
+                        exec_config=self.exec_config,
+                        workspace=self.workspace,
                     )
                 )
                 tools.register(WebSearchTool(api_key=self.parallel_api_key))

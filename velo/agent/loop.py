@@ -327,6 +327,8 @@ class AgentLoop:
                 restrict_to_workspace=self.restrict_to_workspace,
                 path_append=self.exec_config.path_append,
                 extended_safety=self.exec_config.extended_safety,
+                exec_config=self.exec_config,
+                workspace=self.workspace,
             )
         )
         self.tools.register(WebSearchTool(api_key=self.parallel_api_key))
