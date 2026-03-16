@@ -44,18 +44,21 @@ async def _guard(value: dict, tool_name: str, **kwargs) -> dict | None:
     if not any(p in tool_name.lower() for p in track_patterns):
         return value  # Not a resolution action, pass through
 
-    # 2. Check blocked actions
+    # 2. Check blocked actions (never allowed)
     if tool_name in blocked_actions:
-        return {"__block": True}
+        audit_log.append({"tool": tool_name, "params": value, "timestamp": now, "outcome": "blocked", "reason": "Action is permanently blocked"})
+        return {"__block": True, "reason": f"Action '{tool_name}' is blocked by policy."}
 
-    # 3. Check approval-required actions
+    # 3. Check approval-required actions (needs human escalation)
     if tool_name in require_approval:
-        return {"__block": True}
+        audit_log.append({"tool": tool_name, "params": value, "timestamp": now, "outcome": "blocked", "reason": "Requires human approval"})
+        return {"__block": True, "reason": f"Action '{tool_name}' requires human approval. Please escalate."}
 
     # 4. Check amount limits (for refund-like actions)
     amount = value.get("amount") or value.get("refund_amount") or 0
     if isinstance(amount, (int, float)) and amount > max_refund:
-        return {"__block": True}
+        audit_log.append({"tool": tool_name, "params": value, "timestamp": now, "outcome": "blocked", "reason": f"Amount {amount} exceeds limit {max_refund}"})
+        return {"__block": True, "reason": f"Amount exceeds policy limit of {max_refund}. Please escalate."}
 
     # 5. Allowed — log to audit trail and pass through
     audit_log.append({"tool": tool_name, "params": value, "timestamp": now, "outcome": "allowed"})
@@ -260,6 +263,7 @@ list_reports(limit: int = 10)
 
 - **Invalid metrics JSON:** `"Invalid metrics format. Provide a JSON object with numeric values."`
 - **Period not found in compare:** `"No report found for period '{period}'."`
+- **Partial metric overlap:** Metrics only in period A show as "removed", metrics only in period B show as "new". Only shared metrics show percentage change.
 - **Report not found:** `"Report {id} not found."`
 - **Max reports reached:** oldest report removed automatically (FIFO)
 
@@ -321,7 +325,12 @@ When no reports: `Marketing: no reports yet`
     "schedule_time": {
       "type": "string",
       "default": "09:00",
-      "label": "Time to generate report (HH:MM)"
+      "label": "Time to generate report (HH:MM, in customer's timezone from config)"
+    },
+    "timezone": {
+      "type": "string",
+      "default": "UTC",
+      "label": "Timezone for scheduled reports (IANA format)"
     },
     "max_reports": {
       "type": "integer",
@@ -389,9 +398,7 @@ description: |
   Monitor competitor websites, pricing, product launches, and hiring patterns.
   Use when the user asks to track competitors, or as a recurring heartbeat task.
   Uses web search to check for changes — no special integrations needed.
-metadata:
-  requires:
-    bins: ["curl"]
+metadata: {}
 ---
 ```
 
@@ -428,7 +435,7 @@ Each section includes example web search queries and what to look for.
 
 ### 4.1 customer-support manifest.json
 
-Add resolution-guard to recommended plugins:
+The customer-support template exists at `~/Volos/library/templates/customer-support/` (Volos repo). Add resolution-guard to recommended plugins:
 
 ```json
 "plugins": {
