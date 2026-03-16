@@ -32,24 +32,28 @@ def _make_refs(**overrides) -> RuntimeRefs:
 
 
 class TestHeartbeatPluginSetup:
-    """Tests for the heartbeat plugin setup() entry point."""
+    """Tests for the heartbeat plugin register()/activate() entry points."""
 
-    def test_setup_registers_service(self) -> None:
-        """setup() registers exactly one ServiceLike."""
-        from velo.plugins.builtin.heartbeat import setup
+    @pytest.mark.asyncio
+    async def test_setup_registers_service(self) -> None:
+        """register() + activate() registers exactly one ServiceLike."""
+        from velo.plugins.builtin.heartbeat import activate, register
 
         ctx = PluginContext("heartbeat", {"enabled": True, "interval_s": 60}, Path("/tmp"))
-        setup(ctx)
+        register(ctx)
+        await activate(ctx)
 
         services = ctx._collect_services()
         assert len(services) == 1
 
-    def test_setup_disabled_by_default(self) -> None:
+    @pytest.mark.asyncio
+    async def test_setup_disabled_by_default(self) -> None:
         """With no config, the plugin registers a disabled service."""
-        from velo.plugins.builtin.heartbeat import setup
+        from velo.plugins.builtin.heartbeat import activate, register
 
         ctx = PluginContext("heartbeat", {}, Path("/tmp"))
-        setup(ctx)
+        register(ctx)
+        await activate(ctx)
 
         services = ctx._collect_services()
         assert len(services) == 1

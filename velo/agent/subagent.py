@@ -22,6 +22,7 @@ from velo.providers.base import LLMProvider
 
 if TYPE_CHECKING:
     from velo.agent.budget import IterationBudget
+    from velo.plugins.manager import PluginManager
 
 
 class SubagentManager:
@@ -45,6 +46,7 @@ class SubagentManager:
         exec_config: ExecToolConfig | None = None,
         restrict_to_workspace: bool = False,
         on_complete_callback: Callable[[dict[str, Any]], None] | None = None,
+        plugin_manager: "PluginManager | None" = None,
     ):
         self.provider = provider
         self.workspace = workspace
@@ -60,6 +62,7 @@ class SubagentManager:
         self.restrict_to_workspace = restrict_to_workspace
         # Optional callback invoked when a subagent completes (for event-driven heartbeat).
         self.on_complete_callback = on_complete_callback
+        self.plugin_manager = plugin_manager
         # Per-session iteration budgets (parent + subagents draw from the same pool).
         self._session_budgets: dict[str, IterationBudget | None] = {}
         self._running_tasks: dict[str, asyncio.Task[None]] = {}
@@ -152,6 +155,15 @@ class SubagentManager:
             display_label,
             parent_run_id,
         )
+
+        # Plugin hook: subagent_spawned (fire-and-forget, non-blocking)
+        if self.plugin_manager:
+            asyncio.create_task(self.plugin_manager.fire(
+                "subagent_spawned",
+                child_session_key=task_id,
+                parent_session_key=session_key or "",
+            ))
+
         return f"Subagent [{display_label}] started (id: {task_id}). I'll notify you when it completes."
 
     async def _run_subagent(
@@ -286,6 +298,16 @@ class SubagentManager:
                     final_result = "Task completed but no final response was generated."
 
                 logger.info("subagent.completed: id={}", task_id)
+
+                # Plugin hook: subagent_ended (fire-and-forget)
+                if self.plugin_manager:
+                    await self.plugin_manager.fire(
+                        "subagent_ended",
+                        child_session_key=task_id,
+                        outcome="ok",
+                        error=None,
+                    )
+
                 await self._announce_result(task_id, label, task, final_result, origin, "ok")
 
                 # Notify heartbeat service of subagent completion (event-driven wake)
@@ -304,6 +326,16 @@ class SubagentManager:
             except Exception as e:
                 error_msg = f"Error: {str(e)}"
                 logger.error("subagent.failed: id={} error={}", task_id, e)
+
+                # Plugin hook: subagent_ended (fire-and-forget)
+                if self.plugin_manager:
+                    await self.plugin_manager.fire(
+                        "subagent_ended",
+                        child_session_key=task_id,
+                        outcome="error",
+                        error=str(e),
+                    )
+
                 await self._announce_result(task_id, label, task, error_msg, origin, "error")
             finally:
                 # Always cleanup subagent browser session

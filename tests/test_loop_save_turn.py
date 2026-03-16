@@ -1,3 +1,5 @@
+import pytest
+
 from velo.agent.context import ContextBuilder
 from velo.agent.loop import AgentLoop
 from velo.session.manager import Session
@@ -6,15 +8,17 @@ from velo.session.manager import Session
 def _mk_loop() -> AgentLoop:
     loop = AgentLoop.__new__(AgentLoop)
     loop._TOOL_RESULT_MAX_CHARS = 500
+    loop.plugin_manager = None
     return loop
 
 
-def test_save_turn_skips_multimodal_user_when_only_runtime_context() -> None:
+@pytest.mark.asyncio
+async def test_save_turn_skips_multimodal_user_when_only_runtime_context() -> None:
     loop = _mk_loop()
     session = Session(key="test:runtime-only")
     runtime = ContextBuilder._RUNTIME_CONTEXT_TAG + "\nCurrent Time: now (UTC)"
 
-    loop._save_turn(
+    await loop._save_turn(
         session,
         [{"role": "user", "content": [{"type": "text", "text": runtime}]}],
         skip=0,
@@ -22,12 +26,13 @@ def test_save_turn_skips_multimodal_user_when_only_runtime_context() -> None:
     assert session.messages == []
 
 
-def test_save_turn_keeps_image_placeholder_after_runtime_strip() -> None:
+@pytest.mark.asyncio
+async def test_save_turn_keeps_image_placeholder_after_runtime_strip() -> None:
     loop = _mk_loop()
     session = Session(key="test:image")
     runtime = ContextBuilder._RUNTIME_CONTEXT_TAG + "\nCurrent Time: now (UTC)"
 
-    loop._save_turn(
+    await loop._save_turn(
         session,
         [
             {

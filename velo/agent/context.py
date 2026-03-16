@@ -83,7 +83,21 @@ class ContextBuilder:
         ):
             return self._cached_system_prompt
 
+        # Plugin hook: before_prompt_build (modifying, allows plugins to inject context)
+        ctx_additions: dict[str, str] = {"prepend_context": "", "append_context": ""}
+        if self._plugin_manager:
+            result = await self._plugin_manager.pipe(
+                "before_prompt_build",
+                value=ctx_additions,
+            )
+            if isinstance(result, dict):
+                ctx_additions = result
+
         parts = [self._get_identity()]
+
+        # Prepend plugin context before bootstrap files
+        if ctx_additions.get("prepend_context"):
+            parts.append(ctx_additions["prepend_context"])
 
         bootstrap = self._load_bootstrap_files()
         if bootstrap:
@@ -122,6 +136,10 @@ Skills with available="false" need dependencies installed first - you can try in
                 "The following capabilities are available on demand. "
                 f"Use the `search_tools` tool to activate them:\n{deferred_tools_hint}"
             )
+
+        # Append plugin context after all standard sections
+        if ctx_additions.get("append_context"):
+            parts.append(ctx_additions["append_context"])
 
         prompt = "\n\n---\n\n".join(parts)
 

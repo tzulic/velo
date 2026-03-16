@@ -1,0 +1,20 @@
+{
+  "id": "composio",
+  "name": "Composio",
+  "version": "1.0.0",
+  "description": "Loads connected Composio tools at startup and registers them as deferred tools for on-demand activation.",
+  "category": "horizontal",
+  "tags": ["composio", "integration", "tools", "third-party", "automation"],
+  "config_schema": {},
+  "requires": {
+    "channels": [],
+    "env": ["COMPOSIO_API_KEY", "COMPOSIO_USER_ID"],
+    "plugins": []
+  },
+  "hooks": [],
+  "tools": [],
+  "services": false,
+  "context_provider": false,
+  "used_by_templates": [],
+  "ui_hints": {}
+}
