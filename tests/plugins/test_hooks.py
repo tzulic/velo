@@ -1,6 +1,8 @@
 """Tests for expanded hook system."""
 
-from velo.plugins.types import HOOKS
+from pathlib import Path
+
+from velo.plugins.types import HOOKS, HttpRequest, HttpResponse, PluginContext
 
 
 class TestHookDefinitions:
@@ -39,3 +41,48 @@ class TestHookDefinitions:
         valid_types = {"fire_and_forget", "modifying", "claiming"}
         for name, typ in HOOKS.items():
             assert typ in valid_types, f"Hook '{name}' has invalid type '{typ}'"
+
+
+class TestPluginContextDisable:
+    def test_disable_sets_flag(self):
+        ctx = PluginContext(plugin_name="test", config={}, workspace=Path("/tmp"))
+        assert not ctx._disabled
+        ctx.disable("missing api_key")
+        assert ctx._disabled
+        assert ctx._disable_reason == "missing api_key"
+
+    def test_not_disabled_by_default(self):
+        ctx = PluginContext(plugin_name="test", config={}, workspace=Path("/tmp"))
+        assert not ctx._disabled
+        assert ctx._disable_reason == ""
+
+
+class TestPluginContextHttpRoutes:
+    def test_register_route(self):
+        ctx = PluginContext(plugin_name="test", config={}, workspace=Path("/tmp"))
+
+        async def handler(req: HttpRequest) -> HttpResponse:
+            return HttpResponse(status=200, body="ok")
+
+        ctx.register_http_route(method="POST", path="/webhooks/test", handler=handler)
+        routes = ctx._collect_http_routes()
+        assert len(routes) == 1
+        assert routes[0]["method"] == "POST"
+        assert routes[0]["path"] == "/webhooks/test"
+
+    def test_collect_empty_routes(self):
+        ctx = PluginContext(plugin_name="test", config={}, workspace=Path("/tmp"))
+        assert ctx._collect_http_routes() == []
+
+
+class TestHttpTypes:
+    def test_http_request_fields(self):
+        req = HttpRequest(method="POST", path="/test", body=b"hello", headers={}, query_params={})
+        assert req.method == "POST"
+        assert req.body == b"hello"
+
+    def test_http_response_defaults(self):
+        resp = HttpResponse()
+        assert resp.status == 200
+        assert resp.body == ""
+        assert resp.headers == {}

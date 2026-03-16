@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -136,15 +136,41 @@ class HookEntry:
 
 
 # ---------------------------------------------------------------------------
-# PluginContext — the API surface plugins receive in setup()
+# HTTP types for plugin route handlers
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class HttpRequest:
+    """Incoming HTTP request for plugin route handlers."""
+
+    method: str
+    path: str
+    body: bytes
+    headers: dict[str, str]
+    query_params: dict[str, str]
+
+
+@dataclass
+class HttpResponse:
+    """Response from a plugin route handler."""
+
+    status: int = 200
+    body: str | bytes = ""
+    headers: dict[str, str] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# PluginContext — the API surface plugins receive in register()/activate()
 # ---------------------------------------------------------------------------
 
 
 class PluginContext:
     """
-    Context object passed to each plugin's ``setup()`` function.
+    Context object passed to each plugin's ``register()``/``activate()`` function.
 
-    Plugins use this to register tools, context providers, and hook callbacks.
+    Plugins use this to register tools, context providers, hook callbacks, HTTP
+    routes, and to optionally disable themselves during registration.
     """
 
     def __init__(self, plugin_name: str, config: dict[str, Any], workspace: Path) -> None:
@@ -156,6 +182,9 @@ class PluginContext:
         self._hooks: dict[str, list[HookEntry]] = {name: [] for name in HOOKS}
         self._services: list[ServiceLike] = []
         self._channels: list[Any] = []  # BaseChannel instances
+        self._http_routes: list[dict[str, Any]] = []
+        self._disabled: bool = False
+        self._disable_reason: str = ""
 
     def register_tool(self, tool: Tool, *, deferred: bool = False) -> None:
         """Register a tool that the agent can use.
@@ -190,6 +219,40 @@ class PluginContext:
             channel: A BaseChannel instance to add to the channel manager.
         """
         self._channels.append(channel)
+
+    def disable(self, reason: str) -> None:
+        """Gracefully disable this plugin during registration.
+
+        Args:
+            reason: Human-readable explanation (e.g., "missing api_key").
+        """
+        self._disabled = True
+        self._disable_reason = reason
+
+    def register_http_route(
+        self,
+        method: str,
+        path: str,
+        handler: Callable[..., Awaitable[Any]],
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Register an HTTP route on the gateway.
+
+        Args:
+            method: HTTP method (e.g., "GET", "POST").
+            path: URL path (e.g., "/webhooks/stripe").
+            handler: Async callable that accepts an HttpRequest and returns an HttpResponse.
+            metadata: Optional dict of extra metadata attached to the route entry.
+        """
+        self._http_routes.append(
+            {
+                "method": method.upper(),
+                "path": path,
+                "handler": handler,
+                "metadata": metadata or {},
+                "plugin_name": self.plugin_name,
+            }
+        )
 
     def on(self, hook_name: str, callback: HookFn, priority: int = 100) -> None:
         """Register a hook callback.
@@ -227,6 +290,10 @@ class PluginContext:
     def _collect_channels(self) -> list[Any]:
         """Return all registered channels."""
         return list(self._channels)
+
+    def _collect_http_routes(self) -> list[dict[str, Any]]:
+        """Return all registered HTTP routes."""
+        return list(self._http_routes)
 
     async def _resolve_provider(self, fn: ContextProvider) -> str:
         """Call a context provider, handling both sync and async."""
