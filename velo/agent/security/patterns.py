@@ -55,14 +55,18 @@ def redact_credentials(text: str) -> str:
         return text
 
     # Extract code blocks, replace with placeholders, redact the rest,
-    # then restore code blocks.
+    # then restore code blocks. Skip the regex if no code blocks present.
     placeholders: list[str] = []
 
-    def _save_block(m: re.Match[str]) -> str:
-        placeholders.append(m.group(0))
-        return f"\x00CODEBLOCK{len(placeholders) - 1}\x00"
+    if "```" in text:
 
-    protected = _CODE_BLOCK_RE.sub(_save_block, text)
+        def _save_block(m: re.Match[str]) -> str:
+            placeholders.append(m.group(0))
+            return f"\x00CODEBLOCK{len(placeholders) - 1}\x00"
+
+        protected = _CODE_BLOCK_RE.sub(_save_block, text)
+    else:
+        protected = text
 
     for pattern in CREDENTIAL_PATTERNS:
         protected = pattern.sub(_REDACTED, protected)

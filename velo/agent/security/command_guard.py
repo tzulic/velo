@@ -58,6 +58,10 @@ _CATASTROPHIC_PATTERNS: list[tuple[re.Pattern[str], str, str]] = [
     (re.compile(r"\bcat\s+.*\.env\b"), "read_dotenv", "Cannot read .env files"),
 ]
 
+# Pre-compiled patterns for context classification
+_ECHO_RE = re.compile(r"^(echo|printf)\s")
+_HEREDOC_RE = re.compile(r"^cat\s*<<")
+
 
 def _is_safe_context(command: str) -> bool:
     """Check if the command is in a safe output context (echo, heredoc, comment).
@@ -73,10 +77,10 @@ def _is_safe_context(command: str) -> bool:
     if stripped.startswith("#"):
         return True
     # Echo / printf — entire command is output, not execution
-    if re.match(r"^(echo|printf)\s", stripped):
+    if _ECHO_RE.match(stripped):
         return True
     # Heredoc
-    if re.match(r"^cat\s*<<", stripped):
+    if _HEREDOC_RE.match(stripped):
         return True
     return False
 
