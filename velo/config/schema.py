@@ -423,6 +423,22 @@ class ToolsConfig(Base):
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 
 
+class AuxiliaryModelConfig(Base):
+    """Model override for a specific auxiliary task."""
+
+    model: str = ""
+    provider: str = "auto"
+
+
+class AuxiliaryConfig(Base):
+    """Auxiliary model routing for cost optimization."""
+
+    compression: AuxiliaryModelConfig = Field(default_factory=AuxiliaryModelConfig)
+    web_extract: AuxiliaryModelConfig = Field(default_factory=AuxiliaryModelConfig)
+    vision: AuxiliaryModelConfig = Field(default_factory=AuxiliaryModelConfig)
+    summarization: AuxiliaryModelConfig = Field(default_factory=AuxiliaryModelConfig)
+
+
 class Config(BaseSettings):
     """Root configuration for velo."""
 
@@ -434,6 +450,7 @@ class Config(BaseSettings):
     plugins: dict[str, Any] = Field(default_factory=dict)
     a2a: A2AConfig = Field(default_factory=A2AConfig)
     honcho: HonchoConfig = Field(default_factory=HonchoConfig)
+    auxiliary: AuxiliaryConfig = Field(default_factory=AuxiliaryConfig)
 
     @property
     def workspace_path(self) -> Path:
