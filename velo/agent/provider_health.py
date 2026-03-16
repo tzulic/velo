@@ -101,6 +101,35 @@ class ProviderHealth:
         self.last_probe_at = datetime.now(timezone.utc)
 
 
+@dataclass
+class KeyHealth:
+    """Per-API-key health metrics.
+
+    Args:
+        key_suffix: Last 4 chars for safe logging (never log full key).
+        request_count: Total requests made with this key.
+        error_count: Total errors encountered with this key.
+        cooldown_until: UTC datetime when this key comes off cooldown, or None.
+        avg_latency_ms: Rolling average latency in milliseconds.
+    """
+
+    key_suffix: str
+    request_count: int = 0
+    error_count: int = 0
+    cooldown_until: datetime | None = None
+    avg_latency_ms: float = 0.0
+
+    def error_rate(self) -> float:
+        """Return error rate as fraction (0.0 - 1.0).
+
+        Returns:
+            float: Error rate.
+        """
+        if self.request_count == 0:
+            return 0.0
+        return self.error_count / self.request_count
+
+
 def get_provider_health(provider_id: str) -> ProviderHealth:
     """Get (or create) the health state for a provider.
 
