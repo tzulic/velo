@@ -24,7 +24,7 @@ This spec brings Velo's plugin engine to production parity with OpenClaw's plugi
 
 ---
 
-## 1. Hook System Expansion (6 → 20)
+## 1. Hook System Expansion (6 → 18)
 
 ### 1.1 Execution Strategies
 
@@ -36,14 +36,14 @@ Three strategies replace the current two:
 | `modifying` | Sequential by priority (lower priority number runs first). Each callback transforms the value. Return `None` = pass through unchanged. Return a dict containing `{"__block": True}` to short-circuit (for `before_tool_call`) or `{"cancel": True}` (for `message_sending`). | Same as today, with cancel/block extension |
 | `claiming` | Sequential by priority. First callback to return a truthy result wins; remaining callbacks skipped. | **New** |
 
-### 1.2 The 20 Hooks
+### 1.2 The 18 Hooks
 
 #### Agent Lifecycle (5)
 
 | Hook | Strategy | Signature | Purpose |
 |------|----------|-----------|---------|
 | `before_model_resolve` | modifying | `(model: str, provider: str) → dict \| None` | Override model/provider per turn. Return `{"model": "...", "provider": "..."}` or `None` to pass through. |
-| `before_prompt_build` | modifying | `() → dict \| None` | Inject context before prompt assembly. Return `{"prepend_context": "...", "append_context": "..."}` or `None`. |
+| `before_prompt_build` | modifying | `(value: dict, **kwargs) → dict \| None` | Inject context before prompt assembly. Initial value: `{"prepend_context": "", "append_context": ""}`. Each callback merges its strings into the accumulator. Return `None` to pass through. |
 | `after_prompt_build` | modifying | `(value: str, **kwargs) → str` | Modify assembled system prompt. **Existing hook, unchanged.** |
 | `agent_end` | fire_and_forget | `(messages: list, duration_ms: int, **kwargs) → None` | Post-turn analytics, CRM sync, memory capture. |
 | `before_reset` | fire_and_forget | `(session_key: str, **kwargs) → None` | Capture state before `/new` clears session. |
@@ -63,7 +63,7 @@ Three strategies replace the current two:
 |------|----------|-----------|---------|
 | `before_tool_call` | modifying | `(value: dict, tool_name: str, **kwargs) → dict \| None` | Modify tool params. Return `None` to pass through. To block, return `{"__block": True}`. **Existing hook, kwarg renamed from `name` to `tool_name` to match call site.** |
 | `after_tool_call` | modifying | `(value: str, tool_name: str, **kwargs) → str` | Modify tool result. **Existing hook, kwarg renamed from `name` to `tool_name` to match call site.** |
-| `before_message_write` | modifying | `(value: dict, **kwargs) → dict \| None` | Modify or block (`None`) message before JSONL persistence. For PII redaction, debug filtering. |
+| `before_message_write` | modifying | `(value: dict, **kwargs) → dict \| None` | Modify message before JSONL persistence. Return `None` to pass through. Return `{"__block": True}` to prevent write. For PII redaction, debug filtering. |
 
 #### Session (4)
 
@@ -101,7 +101,7 @@ The key difference: `message_sending` can cancel (return `{"cancel": True}`) whi
 
 **`velo/plugins/types.py`:**
 - Add `"claiming"` to `HookType` literal
-- Replace `HOOKS` dict with all 20 entries
+- Replace `HOOKS` dict with all 18 entries
 - All hooks accept `**kwargs` for forward compatibility
 
 **`velo/plugins/manager.py`:**
@@ -118,11 +118,11 @@ The key difference: `message_sending` can cancel (return `{"cancel": True}`) whi
               logger.exception("plugin.claim_failed: {}", hook)
       return None
   ```
-- Update `pipe()` to handle dict returns for `message_sending`:
+- Update `pipe()` to handle dict returns for cancel/block:
   ```python
-  # If callback returns a dict with "cancel", short-circuit
-  if isinstance(result, dict) and result.get("cancel"):
-      return result  # Caller checks for cancel
+  # If callback returns a dict with "cancel" or "__block", short-circuit
+  if isinstance(result, dict) and (result.get("cancel") or result.get("__block")):
+      return result  # Caller checks for cancel/__block
   ```
 
 **Integration points (where hooks are fired):**
@@ -381,7 +381,7 @@ async def load_all(self) -> None:
 | lead-scorer | x | |
 | ticket-tracker | x | |
 | csat-survey | x | |
-| composio (builtin) | x | |
+| composio (builtin) | | x |
 | scheduled-digest | | x |
 | knowledge-base | | x |
 | webhook-receiver | | x |
@@ -529,7 +529,7 @@ No external dependencies. The schema format is simple enough (type, required, de
 | `tests/plugins/test_manifest.py` | Manifest parsing tests |
 | `tests/plugins/test_validation.py` | Config validation tests |
 | `tests/plugins/test_http.py` | HTTP route tests |
-| `tests/plugins/test_hooks.py` | All 20 hooks fire correctly |
+| `tests/plugins/test_hooks.py` | All 18 hooks fire correctly |
 | `tests/plugins/test_lifecycle.py` | Two-phase loading tests |
 | `tests/plugins/test_migration.py` | All 16 plugins load with new lifecycle |
 
@@ -537,10 +537,10 @@ No external dependencies. The schema format is simple enough (type, required, de
 
 | File | Changes |
 |------|---------|
-| `velo/plugins/types.py` | `claiming` hook type, 20 hooks, `HttpRequest`/`HttpResponse`, `register_http_route()`, `ctx.disable()` |
+| `velo/plugins/types.py` | `claiming` hook type, 18 hooks, `HttpRequest`/`HttpResponse`, `register_http_route()`, `ctx.disable()` |
 | `velo/plugins/manager.py` | Two-phase loading, manifest discovery, `claim()` method, HTTP route mounting, config validation |
 | `velo/plugins/__init__.py` | Update exports |
-| `velo/agent/loop.py` | Fire 10 new hooks at appropriate points |
+| `velo/agent/loop.py` | Fire new hooks at appropriate points (message_received, inbound_claim, message_sending, agent_end, before_reset, before_model_resolve) |
 | `velo/agent/context.py` | Fire `before_prompt_build` hook |
 | `velo/bus/delivery_queue.py` | Fire `message_sent` hook after successful delivery |
 | `velo/session/manager.py` | Fire `session_start`, `session_end`, `before_message_write` hooks. Add idle-timeout detection for `session_end`. |
@@ -588,7 +588,7 @@ No external dependencies. The schema format is simple enough (type, required, de
 
 ### In Scope
 
-- 20 hooks with 3 execution strategies
+- 18 hooks with 3 execution strategies
 - `plugin.json` manifests for all 16 plugins
 - Two-phase lifecycle (`register`/`activate`)
 - HTTP route registration on gateway
