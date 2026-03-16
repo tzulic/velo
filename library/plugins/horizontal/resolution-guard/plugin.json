@@ -1,0 +1,52 @@
+{
+  "id": "resolution-guard",
+  "name": "Resolution Guard",
+  "version": "1.0.0",
+  "description": "Policy enforcement and audit trail for consequential agent actions. Intercepts MCP tool calls, enforces limits, and logs all resolution actions.",
+  "category": "horizontal",
+  "tags": ["support", "policy", "audit", "guardrails"],
+  "config_schema": {
+    "track_patterns": {
+      "type": "array",
+      "default": ["refund", "cancel", "delete", "update_order", "modify_subscription"],
+      "label": "Tool name patterns to track",
+      "help": "Any tool whose name contains one of these patterns will be policy-checked and audited"
+    },
+    "max_refund_amount": {
+      "type": "integer",
+      "default": 100,
+      "label": "Maximum refund amount without human approval (in cents)"
+    },
+    "require_approval_actions": {
+      "type": "array",
+      "default": ["cancel_subscription", "delete_account"],
+      "label": "Actions that always require human approval"
+    },
+    "blocked_actions": {
+      "type": "array",
+      "default": [],
+      "label": "Actions the agent must never take",
+      "advanced": true
+    },
+    "max_audit_entries": {
+      "type": "integer",
+      "default": 1000,
+      "label": "Maximum audit log entries",
+      "advanced": true
+    }
+  },
+  "requires": {
+    "channels": [],
+    "env": [],
+    "plugins": []
+  },
+  "hooks": ["before_tool_call"],
+  "tools": ["get_audit_log", "get_resolution_stats"],
+  "services": false,
+  "context_provider": true,
+  "used_by_templates": ["customer-support"],
+  "ui_hints": {
+    "icon": "shield",
+    "color": "red"
+  }
+}
