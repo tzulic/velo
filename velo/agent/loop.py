@@ -716,13 +716,19 @@ class AgentLoop:
 
                     tools_used.append(tool_call.name)
                     params = tool_call.arguments
-                    # Plugin hook: before_tool_call
+                    # Plugin hook: before_tool_call (can block via __block)
                     if self.plugin_manager:
                         params = await self.plugin_manager.pipe(
                             "before_tool_call",
                             value=params,
                             tool_name=tool_call.name,
                         )
+                    if isinstance(params, dict) and params.get("__block"):
+                        reason = params.get("reason", "Action blocked by policy")
+                        messages = self.context.add_tool_result(
+                            messages, tool_call.id, tool_call.name, reason
+                        )
+                        continue
                     args_str = json.dumps(params, ensure_ascii=False)
                     logger.info("Tool call: {}({})", tool_call.name, args_str[:200])
                     result = await self.tools.execute(tool_call.name, params)
