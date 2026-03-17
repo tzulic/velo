@@ -42,5 +42,9 @@ RUN mkdir -p /root/.velo
 # Gateway default port
 EXPOSE 18790
 
-ENTRYPOINT ["velo"]
-CMD ["status"]
+# Entrypoint: inject Swarm secrets into config, then exec velo
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["gateway"]
