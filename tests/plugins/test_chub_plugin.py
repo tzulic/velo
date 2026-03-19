@@ -31,7 +31,7 @@ class TestChubSearchTool:
         mock_proc.communicate = AsyncMock(return_value=(b"stripe/api - Stripe API docs\n", b""))
         mock_proc.returncode = 0
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             result = await tool.execute(query="stripe")
             assert "stripe/api" in result
 
@@ -96,7 +96,9 @@ class TestChubGetTool:
         global_dir = tmp_path / "global"
         global_dir.mkdir()
         (global_dir / "stripe-api.json").write_text('{"note": "Use idempotency keys"}')
-        tool = ChubGetTool(workspace=Path("/tmp"), config={"global_annotations_path": str(global_dir)})
+        tool = ChubGetTool(
+            workspace=Path("/tmp"), config={"global_annotations_path": str(global_dir)}
+        )
         mock_proc = AsyncMock()
         mock_proc.communicate = AsyncMock(return_value=(b"# Stripe API\nDoc content", b""))
         mock_proc.returncode = 0
@@ -110,7 +112,9 @@ class TestChubGetTool:
         global_dir = tmp_path / "global"
         global_dir.mkdir()
         (global_dir / "stripe-api.json").write_text('{"note": "Global note here"}')
-        tool = ChubGetTool(workspace=Path("/tmp"), config={"global_annotations_path": str(global_dir)})
+        tool = ChubGetTool(
+            workspace=Path("/tmp"), config={"global_annotations_path": str(global_dir)}
+        )
         mock_proc = AsyncMock()
         output = b"# Stripe API\nContent\n\n---\n[Agent note - 2026-03-19]\nLocal note here"
         mock_proc.communicate = AsyncMock(return_value=(output, b""))
@@ -207,3 +211,31 @@ class TestChubPluginRegistration:
         hint = providers[0]()
         assert "chub_search" in hint
         assert "chub_get" in hint
+
+
+class TestChubPluginIntegration:
+    """Integration test for full plugin registration and tool execution."""
+
+    @pytest.mark.asyncio
+    @patch("shutil.which", return_value="/usr/bin/chub")
+    async def test_full_lifecycle(self, _mock_which: MagicMock) -> None:
+        """register() → tools registered → tools executable."""
+        from velo.plugins.builtin.chub import register
+
+        ctx = PluginContext("chub", {"lang_default": "py"}, Path("/tmp/workspace"))
+        register(ctx)
+
+        tools = {t.name: t for t, _ in ctx._collect_tools()}
+        assert "chub_search" in tools
+        assert "chub_get" in tools
+        assert "chub_annotate" in tools
+
+        # Verify tools use correct workspace
+        search_tool = tools["chub_search"]
+        assert search_tool._workspace == Path("/tmp/workspace")
+
+        # Verify context provider works
+        providers = ctx._collect_context_providers()
+        hint = providers[0]()
+        assert isinstance(hint, str)
+        assert len(hint) > 0
