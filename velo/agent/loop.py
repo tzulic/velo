@@ -1176,11 +1176,30 @@ class AgentLoop:
             return OutboundMessage(
                 channel=msg.channel, chat_id=msg.chat_id, content="New session started."
             )
+        if cmd == "/retry":
+            original_text, _ = session.truncate_to_last_user()
+            if original_text is None:
+                return OutboundMessage(
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    content="Nothing to retry.",
+                )
+            self.sessions.save(session)
+            await self.bus.publish_inbound(
+                InboundMessage(
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    content=original_text,
+                    sender_id=msg.sender_id,
+                )
+            )
+            logger.info("agent.retry: re-enqueued '{}' for {}", original_text[:50], key)
+            return None
         if cmd == "/help":
             return OutboundMessage(
                 channel=msg.channel,
                 chat_id=msg.chat_id,
-                content="🐈 velo commands:\n/new — Start a new conversation\n/stop — Stop the current task\n/help — Show available commands",
+                content="🐈 velo commands:\n/new — Start a new conversation\n/retry — Retry the last message\n/stop — Stop the current task\n/help — Show available commands",
             )
 
         unconsolidated = len(session.messages) - session.last_consolidated

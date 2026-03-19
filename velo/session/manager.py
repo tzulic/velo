@@ -62,6 +62,38 @@ class Session:
             out.append(entry)
         return out
 
+    def truncate_to_last_user(self) -> tuple[str | None, list[dict[str, Any]]]:
+        """Remove all messages from the last user message onward.
+
+        Used by /retry to replay the last user input with a clean slate.
+        Handles multi-tool exchanges correctly by removing everything
+        from the last user message, not just the last 2 messages.
+
+        Returns:
+            tuple: (original_user_text, remaining_messages).
+                   original_user_text is None if no user messages exist.
+        """
+        last_user_idx = None
+        for i in range(len(self.messages) - 1, -1, -1):
+            if self.messages[i].get("role") == "user":
+                last_user_idx = i
+                break
+
+        if last_user_idx is None:
+            return None, list(self.messages)
+
+        original_text = self.messages[last_user_idx].get("content", "")
+        if isinstance(original_text, list):
+            original_text = " ".join(
+                item.get("text", "") for item in original_text
+                if isinstance(item, dict) and item.get("type") == "text"
+            )
+
+        remaining = self.messages[:last_user_idx]
+        self.messages = remaining
+        self.updated_at = datetime.now()
+        return original_text, remaining
+
     def clear(self) -> None:
         """Clear all messages and reset session to initial state."""
         self.messages = []
