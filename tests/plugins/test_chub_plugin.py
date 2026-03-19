@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from velo.plugins.builtin.chub.tools import ChubAnnotateTool, ChubGetTool, ChubSearchTool
+from velo.plugins.types import PluginContext
 
 
 class TestChubSearchTool:
@@ -160,3 +161,49 @@ class TestChubAnnotateTool:
         with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError):
             result = await tool.execute(doc_id="stripe/api", note="test")
             assert "not available" in result.lower()
+
+
+class TestChubPluginRegistration:
+    """Tests for the chub plugin register() entry point."""
+
+    @patch("shutil.which", return_value="/usr/bin/chub")
+    def test_register_with_cli_available(self, _mock_which: MagicMock) -> None:
+        """register() registers 3 deferred tools and 1 context provider when chub is found."""
+        from velo.plugins.builtin.chub import register
+
+        ctx = PluginContext("chub", {"enabled": True}, Path("/tmp/workspace"))
+        register(ctx)
+
+        assert not ctx._disabled
+        tools = ctx._collect_tools()
+        assert len(tools) == 3
+        assert all(deferred for _, deferred in tools)
+        names = {t.name for t, _ in tools}
+        assert names == {"chub_search", "chub_get", "chub_annotate"}
+        providers = ctx._collect_context_providers()
+        assert len(providers) == 1
+
+    @patch("shutil.which", return_value=None)
+    def test_register_disables_when_cli_missing(self, _mock_which: MagicMock) -> None:
+        """register() calls ctx.disable() when chub CLI is not found."""
+        from velo.plugins.builtin.chub import register
+
+        ctx = PluginContext("chub", {"enabled": True}, Path("/tmp/workspace"))
+        register(ctx)
+
+        assert ctx._disabled
+        assert "chub" in ctx._disable_reason.lower()
+        assert len(ctx._collect_tools()) == 0
+
+    @patch("shutil.which", return_value="/usr/bin/chub")
+    def test_context_provider_returns_hint(self, _mock_which: MagicMock) -> None:
+        """Context provider returns the system prompt hint."""
+        from velo.plugins.builtin.chub import register
+
+        ctx = PluginContext("chub", {}, Path("/tmp/workspace"))
+        register(ctx)
+
+        providers = ctx._collect_context_providers()
+        hint = providers[0]()
+        assert "chub_search" in hint
+        assert "chub_get" in hint
