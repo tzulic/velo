@@ -230,9 +230,9 @@ class TestChubPluginIntegration:
         assert "chub_get" in tools
         assert "chub_annotate" in tools
 
-        # Verify tools use correct workspace
-        search_tool = tools["chub_search"]
-        assert search_tool._workspace == Path("/tmp/workspace")
+        # Verify get tool uses correct workspace
+        get_tool = tools["chub_get"]
+        assert get_tool._workspace == Path("/tmp/workspace")
 
         # Verify context provider works
         providers = ctx._collect_context_providers()

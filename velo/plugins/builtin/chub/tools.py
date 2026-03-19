@@ -12,6 +12,11 @@ from loguru import logger
 
 from velo.agent.tools.base import Tool
 
+# Reason: chub CLI appends annotations with this prefix in its output.
+# Used to detect whether a workspace annotation already exists so we
+# don't duplicate it with a global annotation.
+_WORKSPACE_ANNOTATION_MARKER = "[Agent note"
+
 
 async def _run_chub(
     args: list[str],
@@ -32,9 +37,9 @@ async def _run_chub(
         FileNotFoundError: If chub CLI is not installed.
         asyncio.TimeoutError: If the command exceeds timeout.
     """
-    env = {**os.environ}
+    env: dict[str, str] | None = None
     if env_override:
-        env.update(env_override)
+        env = {**os.environ, **env_override}
 
     proc = await asyncio.create_subprocess_exec(
         "chub",
@@ -52,7 +57,11 @@ async def _run_chub(
         proc.kill()
         await proc.wait()
         raise
-    return stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace"), proc.returncode or 0
+    return (
+        stdout.decode("utf-8", errors="replace"),
+        stderr.decode("utf-8", errors="replace"),
+        proc.returncode or 0,
+    )
 
 
 def _read_global_annotation(global_path: str, doc_id: str) -> str:
@@ -67,11 +76,11 @@ def _read_global_annotation(global_path: str, doc_id: str) -> str:
     """
     safe_name = doc_id.replace("/", "-") + ".json"
     path = Path(global_path) / safe_name
-    if not path.is_file():
-        return ""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return data.get("note", "")
+    except FileNotFoundError:
+        return ""
     except (json.JSONDecodeError, OSError):
         logger.debug("chub.global_annotation_read_failed: doc_id={}", doc_id)
         return ""
@@ -101,10 +110,9 @@ class ChubSearchTool(Tool):
         """Initialize search tool.
 
         Args:
-            workspace: Agent workspace path.
-            config: Plugin config dict.
+            workspace: Agent workspace path (unused by search, kept for consistent interface).
+            config: Plugin config dict. Reads: search_timeout.
         """
-        self._workspace = workspace
         self._timeout = config.get("search_timeout", 10)
 
     async def execute(self, **kwargs: Any) -> str:
@@ -196,7 +204,7 @@ class ChubGetTool(Tool):
             output = stdout.strip()
 
             # Append global annotation if no workspace annotation present
-            has_workspace_annotation = "[Agent note" in output
+            has_workspace_annotation = _WORKSPACE_ANNOTATION_MARKER in output
             if not has_workspace_annotation:
                 global_note = _read_global_annotation(self._global_path, doc_id)
                 if global_note:
