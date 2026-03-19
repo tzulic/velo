@@ -691,19 +691,42 @@ class AgentLoop:
             ):
                 response = await self._chat_with_retry(**llm_kwargs)
 
-            # Reactive trim: context overflow → trim aggressively and retry once.
+            # Context overflow: compress first, then trim as last resort.
             if response.finish_reason == "error" and response.error_code == "context_overflow":
-                token_budget = int(ctx_window * REACTIVE_TRIM_TARGET)
-                trimmed = trim_to_budget(messages, token_budget)
-                if len(trimmed) < len(messages):
-                    logger.warning(
-                        "context.overflow_recovery: trimmed {} → {} messages, retrying",
-                        len(messages),
-                        len(trimmed),
+                # Step 1: Try compressing middle messages (lighter operation).
+                # compress_context returns (messages, summary, est_tokens).
+                try:
+                    compressed_msgs, _summary, _est = await compress_context(
+                        messages,
+                        self.provider,
+                        self.model,
+                        ctx_window,
                     )
-                    messages = trimmed
-                    llm_kwargs["messages"] = messages
-                    response = await self._chat_with_retry(**llm_kwargs)
+                    if len(compressed_msgs) < len(messages):
+                        logger.info(
+                            "context.overflow_compress: {} → {} messages, retrying",
+                            len(messages),
+                            len(compressed_msgs),
+                        )
+                        messages = compressed_msgs
+                        llm_kwargs["messages"] = messages
+                        response = await self._chat_with_retry(**llm_kwargs)
+                except Exception:
+                    logger.warning("context.compress_failed: falling through to trim")
+
+                # Step 2: If still overflowing, trim aggressively
+                if response.finish_reason == "error" and response.error_code == "context_overflow":
+                    token_budget = int(ctx_window * REACTIVE_TRIM_TARGET)
+                    trimmed = trim_to_budget(messages, token_budget)
+                    if len(trimmed) < len(messages):
+                        logger.warning(
+                            "context.overflow_trim: {} → {} messages, retrying",
+                            len(messages),
+                            len(trimmed),
+                        )
+                        messages = trimmed
+                        llm_kwargs["messages"] = messages
+                        response = await self._chat_with_retry(**llm_kwargs)
 
             if response.has_tool_calls:
                 if on_progress:
