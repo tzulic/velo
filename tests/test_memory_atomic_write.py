@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from velo.agent.memory import _atomic_write
+from velo.utils.helpers import atomic_write as _atomic_write
 
 
 class TestAtomicWrite:

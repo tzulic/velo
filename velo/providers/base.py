@@ -214,6 +214,16 @@ class LLMProvider(ABC):
             reasoning_content=response.reasoning_content,
         )
 
+    def get_auth_error_message(self) -> str:
+        """Return user-facing message for authentication failures.
+
+        Override in subclasses for provider-specific messaging.
+
+        Returns:
+            str: Human-readable auth error message.
+        """
+        return "Authentication failed. Please check your API key configuration."
+
     @abstractmethod
     def get_default_model(self) -> str:
         """Get the default model for this provider."""

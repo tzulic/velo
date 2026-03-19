@@ -114,7 +114,7 @@ class TestReactiveTrim:
 
     @pytest.mark.asyncio
     async def test_overflow_error_triggers_trim_and_retry(self, make_loop) -> None:
-        """Context overflow error triggers aggressive trim + retry."""
+        """Context overflow error triggers compress + trim + retry."""
         loop = make_loop(context_window=1000)
 
         overflow_response = LLMResponse(
@@ -127,7 +127,13 @@ class TestReactiveTrim:
         loop.provider.chat = AsyncMock(side_effect=[overflow_response, ok_response])
 
         messages = _make_messages(10, chars_per_msg=200)
-        final_content, _, _ = await loop._run_agent_loop(messages)
+
+        # Patch compress_context to pass-through so we test the trim path cleanly.
+        async def _passthrough(msgs, *a, **kw):
+            return msgs, None, 0
+
+        with patch("velo.agent.loop.compress_context", side_effect=_passthrough):
+            final_content, _, _ = await loop._run_agent_loop(messages)
 
         assert final_content == "Recovered"
         # Called twice: first overflow, then retry after trim
@@ -151,10 +157,30 @@ class TestReactiveTrim:
             {"role": "system", "content": "x" * 4000},
             {"role": "user", "content": "y" * 4000},
         ]
-        final_content, _, _ = await loop._run_agent_loop(messages)
 
-        assert (
-            "error" in (final_content or "").lower() or "context" in (final_content or "").lower()
-        )
-        # Only called once since trimming doesn't reduce message count
+        # Patch compress_context to pass-through (can't compress 2 msgs either).
+        async def _passthrough(msgs, *a, **kw):
+            return msgs, None, 0
+
+        with patch("velo.agent.loop.compress_context", side_effect=_passthrough):
+            final_content, _, _ = await loop._run_agent_loop(messages)
+
+        # User-facing error message mentions "conversation" and "long"
+        assert "conversation" in (final_content or "").lower() or "too long" in (final_content or "").lower()
+        # Only called once since neither compress nor trim reduces message count
         assert loop.provider.chat.call_count == 1
+
+
+class TestCompressBeforeTrim:
+    """Compression is attempted before aggressive trimming on overflow."""
+
+    @pytest.mark.asyncio
+    async def test_compress_context_signature_correct(self):
+        """compress_context accepts model and context_window params."""
+        import inspect
+        from velo.agent.context_compressor import compress_context
+        sig = inspect.signature(compress_context)
+        assert "model" in sig.parameters
+        assert "context_window" in sig.parameters
+        # Returns a 3-tuple (check annotation contains tuple)
+        assert "tuple" in str(sig.return_annotation).lower()

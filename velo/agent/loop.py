@@ -30,6 +30,12 @@ from velo.agent.llm_helpers import (
     chat_with_retry,
     trim_to_budget,
 )
+from velo.agent.memory_triggers import (
+    get_triggered_nudge as _get_triggered_nudge,
+)
+from velo.agent.memory_triggers import (
+    should_trigger_memory_nudge as _should_trigger_memory_nudge,
+)
 from velo.agent.provider_health import get_provider_health
 from velo.agent.subagent import SubagentManager
 from velo.agent.tools.browse import BrowserSession, WebBrowseTool
@@ -40,10 +46,6 @@ from velo.agent.tools.registry import ToolRegistry
 from velo.agent.tools.search import SearchToolsTool
 from velo.agent.tools.shell import ExecTool
 from velo.agent.tools.spawn import SpawnTool
-from velo.agent.memory_triggers import (
-    get_triggered_nudge as _get_triggered_nudge,
-    should_trigger_memory_nudge as _should_trigger_memory_nudge,
-)
 from velo.agent.tools.web import WebFetchTool, WebSearchTool
 from velo.bus.events import InboundMessage, OutboundMessage  # noqa: I001
 from velo.bus.queue import MessageBus  # Honcho: lazy import of adapter/tools in __init__
@@ -57,6 +59,37 @@ if TYPE_CHECKING:
     from velo.config.schema import A2APeerConfig, BrowseConfig, ChannelsConfig, ExecToolConfig
     from velo.cron.service import CronService
     from velo.plugins.manager import PluginManager
+
+# ---------------------------------------------------------------------------
+# User-facing error messages
+# ---------------------------------------------------------------------------
+_USER_ERROR_MESSAGES: dict[str, str] = {
+    "rate_limit": "I'm being rate-limited right now. Let me try again in a moment.",
+    "server_error": "The AI service is having temporary issues. Retrying...",
+    "timeout": "The request took too long. Let me try again.",
+    "context_overflow": "Our conversation got too long. I'll compress and try again.",
+    "auth_error": "There's an authentication issue. Please check your API key configuration.",
+    "budget_exceeded": (
+        "I've reached the monthly usage limit for your account. "
+        "You can purchase a credit pack at volos.app/billing to continue."
+    ),
+    "bad_request": "Something went wrong with the request. Please try rephrasing.",
+}
+
+
+def _user_error_message(error_code: str) -> str:
+    """Return a user-friendly error message for an error code.
+
+    Args:
+        error_code: Classified error code from providers/errors.py.
+
+    Returns:
+        str: Natural language error message for the user.
+    """
+    return _USER_ERROR_MESSAGES.get(
+        error_code,
+        "Sorry, I encountered an error. Please try again.",
+    )
 
 
 class _SafeWriter:
@@ -648,8 +681,8 @@ class AgentLoop:
 
             # Accumulate token usage for cost tracking
             if response.usage:
-                total_tokens_in += response.usage.get("input_tokens", 0)
-                total_tokens_out += response.usage.get("output_tokens", 0)
+                total_tokens_in += response.usage.get("prompt_tokens", 0)
+                total_tokens_out += response.usage.get("completion_tokens", 0)
 
             # Provider fallback: if primary exhausted all retries with a transient error,
             # swap to the backup provider and retry once. One-shot — stays active for session.
@@ -660,19 +693,42 @@ class AgentLoop:
             ):
                 response = await self._chat_with_retry(**llm_kwargs)
 
-            # Reactive trim: context overflow → trim aggressively and retry once.
+            # Context overflow: compress first, then trim as last resort.
             if response.finish_reason == "error" and response.error_code == "context_overflow":
-                token_budget = int(ctx_window * REACTIVE_TRIM_TARGET)
-                trimmed = trim_to_budget(messages, token_budget)
-                if len(trimmed) < len(messages):
-                    logger.warning(
-                        "context.overflow_recovery: trimmed {} → {} messages, retrying",
-                        len(messages),
-                        len(trimmed),
+                # Step 1: Try compressing middle messages (lighter operation).
+                # compress_context returns (messages, summary, est_tokens).
+                try:
+                    compressed_msgs, _summary, _est = await compress_context(
+                        messages,
+                        self.provider,
+                        self.model,
+                        ctx_window,
                     )
-                    messages = trimmed
-                    llm_kwargs["messages"] = messages
-                    response = await self._chat_with_retry(**llm_kwargs)
+                    if len(compressed_msgs) < len(messages):
+                        logger.info(
+                            "context.overflow_compress: {} → {} messages, retrying",
+                            len(messages),
+                            len(compressed_msgs),
+                        )
+                        messages = compressed_msgs
+                        llm_kwargs["messages"] = messages
+                        response = await self._chat_with_retry(**llm_kwargs)
+                except Exception:
+                    logger.warning("context.compress_failed: falling through to trim")
+
+                # Step 2: If still overflowing, trim aggressively
+                if response.finish_reason == "error" and response.error_code == "context_overflow":
+                    token_budget = int(ctx_window * REACTIVE_TRIM_TARGET)
+                    trimmed = trim_to_budget(messages, token_budget)
+                    if len(trimmed) < len(messages):
+                        logger.warning(
+                            "context.overflow_trim: {} → {} messages, retrying",
+                            len(messages),
+                            len(trimmed),
+                        )
+                        messages = trimmed
+                        llm_kwargs["messages"] = messages
+                        response = await self._chat_with_retry(**llm_kwargs)
 
             if response.has_tool_calls:
                 if on_progress:
@@ -753,15 +809,15 @@ class AgentLoop:
                 # Don't persist error responses to session history — they can
                 # poison the context and cause permanent 400 loops (#1303).
                 if response.finish_reason == "error":
-                    if response.error_code == "budget_exceeded":
+                    code = response.error_code or "unknown"
+                    if code == "budget_exceeded":
                         logger.info("budget_exceeded for session {}", session_key)
-                        final_content = (
-                            "I've reached the monthly usage limit for your account. "
-                            "You can purchase a credit pack at volos.app/billing to continue."
-                        )
-                        break
-                    logger.error("LLM returned error: {}", (clean or "")[:200])
-                    final_content = clean or "Sorry, I encountered an error calling the AI model."
+                    else:
+                        logger.error("LLM returned error: {}", (clean or "")[:200])
+                    if code == "auth_error":
+                        final_content = self.provider.get_auth_error_message()
+                    else:
+                        final_content = _user_error_message(code)
                     break
                 messages = self.context.add_assistant_message(
                     messages,
@@ -1125,11 +1181,30 @@ class AgentLoop:
             return OutboundMessage(
                 channel=msg.channel, chat_id=msg.chat_id, content="New session started."
             )
+        if cmd == "/retry":
+            original_text = session.truncate_to_last_user()
+            if original_text is None:
+                return OutboundMessage(
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    content="Nothing to retry.",
+                )
+            self.sessions.save(session)
+            await self.bus.publish_inbound(
+                InboundMessage(
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    content=original_text,
+                    sender_id=msg.sender_id,
+                )
+            )
+            logger.info("agent.retry: re-enqueued '{}' for {}", original_text[:50], key)
+            return None
         if cmd == "/help":
             return OutboundMessage(
                 channel=msg.channel,
                 chat_id=msg.chat_id,
-                content="🐈 velo commands:\n/new — Start a new conversation\n/stop — Stop the current task\n/help — Show available commands",
+                content="🐈 velo commands:\n/new — Start a new conversation\n/retry — Retry the last message\n/stop — Stop the current task\n/help — Show available commands",
             )
 
         unconsolidated = len(session.messages) - session.last_consolidated

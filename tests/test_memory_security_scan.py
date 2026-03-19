@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from velo.agent.memory import MemoryStore, _scan_memory_content
+from velo.agent.memory import MemoryStore
+from velo.agent.security import scan_content as _scan_memory_content
 
 
 class TestScanMemoryContent:
@@ -137,7 +138,7 @@ class TestWriteLongTermSecurity:
             # so the threat string is passed as the second positional argument.
             call_args = mock_logger.warning.call_args[0]
             threat_message = " ".join(str(a) for a in call_args)
-            assert "memory.write_rejected" in threat_message
+            assert "write_rejected" in threat_message
 
 
 class TestWriteUserProfileSecurity:
