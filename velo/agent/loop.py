@@ -58,6 +58,37 @@ if TYPE_CHECKING:
     from velo.cron.service import CronService
     from velo.plugins.manager import PluginManager
 
+# ---------------------------------------------------------------------------
+# User-facing error messages
+# ---------------------------------------------------------------------------
+_USER_ERROR_MESSAGES: dict[str, str] = {
+    "rate_limit": "I'm being rate-limited right now. Let me try again in a moment.",
+    "server_error": "The AI service is having temporary issues. Retrying...",
+    "timeout": "The request took too long. Let me try again.",
+    "context_overflow": "Our conversation got too long. I'll compress and try again.",
+    "auth_error": "There's an authentication issue. Please check your API key configuration.",
+    "budget_exceeded": (
+        "I've reached the monthly usage limit for your account. "
+        "You can purchase a credit pack at volos.app/billing to continue."
+    ),
+    "bad_request": "Something went wrong with the request. Please try rephrasing.",
+}
+
+
+def _user_error_message(error_code: str) -> str:
+    """Return a user-friendly error message for an error code.
+
+    Args:
+        error_code: Classified error code from providers/errors.py.
+
+    Returns:
+        str: Natural language error message for the user.
+    """
+    return _USER_ERROR_MESSAGES.get(
+        error_code,
+        "Sorry, I encountered an error. Please try again.",
+    )
+
 
 class _SafeWriter:
     """Wraps a stream so OSError (broken pipe, closed fd) is silently swallowed.
@@ -753,15 +784,12 @@ class AgentLoop:
                 # Don't persist error responses to session history — they can
                 # poison the context and cause permanent 400 loops (#1303).
                 if response.finish_reason == "error":
-                    if response.error_code == "budget_exceeded":
+                    code = response.error_code or "unknown"
+                    if code == "budget_exceeded":
                         logger.info("budget_exceeded for session {}", session_key)
-                        final_content = (
-                            "I've reached the monthly usage limit for your account. "
-                            "You can purchase a credit pack at volos.app/billing to continue."
-                        )
-                        break
-                    logger.error("LLM returned error: {}", (clean or "")[:200])
-                    final_content = clean or "Sorry, I encountered an error calling the AI model."
+                    else:
+                        logger.error("LLM returned error: {}", (clean or "")[:200])
+                    final_content = _user_error_message(code)
                     break
                 messages = self.context.add_assistant_message(
                     messages,
