@@ -448,12 +448,33 @@ class AnthropicProvider(LLMProvider):
                 )
 
         except Exception as e:
-            resp = _handle_error(e)
-            yield StreamChunk(
-                delta=resp.content or "",
-                finish_reason="error",
-                error_code=resp.error_code,
-            )
+            # Streaming failed — fall back to non-streaming within same provider.
+            logger.warning("provider.stream_fallback_triggered: {}", str(e)[:200])
+            try:
+                response = await self.chat(
+                    messages=messages,
+                    tools=tools,
+                    model=model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    reasoning_effort=reasoning_effort,
+                    tool_choice=tool_choice,
+                )
+                yield StreamChunk(
+                    delta=response.content or "",
+                    tool_calls=response.tool_calls or None,
+                    finish_reason=response.finish_reason,
+                    usage=response.usage or None,
+                    reasoning_content=response.reasoning_content,
+                    error_code=response.error_code,
+                )
+            except Exception as fallback_err:
+                resp = _handle_error(fallback_err)
+                yield StreamChunk(
+                    delta=resp.content or "",
+                    finish_reason="error",
+                    error_code=resp.error_code,
+                )
 
     # ------------------------------------------------------------------
     # Response parsing

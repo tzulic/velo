@@ -204,77 +204,98 @@ class OpenAIProvider(LLMProvider):
 
         try:
             response = await self._client.chat.completions.create(**kwargs)
-        except Exception as e:
-            resp = _handle_error(e)
+
+            accumulated_tool_calls: dict[int, dict[str, str]] = {}
+            reasoning_parts: list[str] = []
+            final_usage: dict[str, int] = {}
+            final_finish: str | None = None
+
+            async for chunk in response:
+                # Capture usage from any chunk (OpenAI sends it on a separate
+                # usage-only chunk after the finish chunk).
+                if hasattr(chunk, "usage") and chunk.usage:
+                    final_usage = {
+                        "prompt_tokens": getattr(chunk.usage, "prompt_tokens", 0) or 0,
+                        "completion_tokens": getattr(chunk.usage, "completion_tokens", 0) or 0,
+                        "total_tokens": getattr(chunk.usage, "total_tokens", 0) or 0,
+                    }
+
+                if not chunk.choices:
+                    continue
+
+                delta = chunk.choices[0].delta
+                finish = chunk.choices[0].finish_reason
+
+                # Yield text deltas.
+                if delta.content:
+                    yield StreamChunk(delta=delta.content)
+
+                # Accumulate reasoning content.
+                reasoning_delta = getattr(delta, "reasoning_content", None)
+                if reasoning_delta:
+                    reasoning_parts.append(reasoning_delta)
+
+                # Accumulate tool call deltas.
+                if delta.tool_calls:
+                    for tc_delta in delta.tool_calls:
+                        idx = tc_delta.index
+                        if idx not in accumulated_tool_calls:
+                            accumulated_tool_calls[idx] = {"name": "", "arguments": ""}
+                        if tc_delta.function and tc_delta.function.name:
+                            accumulated_tool_calls[idx]["name"] = tc_delta.function.name
+                        if tc_delta.function and tc_delta.function.arguments:
+                            accumulated_tool_calls[idx]["arguments"] += tc_delta.function.arguments
+
+                if finish:
+                    final_finish = finish
+
+            # Emit final chunk after stream is exhausted (captures usage-only trailing chunk).
+            final_tool_calls = None
+            if accumulated_tool_calls:
+                final_tool_calls = [
+                    ToolCallRequest(
+                        id=short_tool_id(),
+                        name=tc["name"],
+                        arguments=json_repair.loads(tc["arguments"]) if tc["arguments"] else {},
+                    )
+                    for tc in accumulated_tool_calls.values()
+                ]
+
             yield StreamChunk(
-                delta=resp.content or "",
-                finish_reason="error",
-                error_code=resp.error_code,
+                finish_reason=final_finish or "stop",
+                tool_calls=final_tool_calls,
+                usage=final_usage or None,
+                reasoning_content="".join(reasoning_parts) or None,
             )
-            return
 
-        accumulated_tool_calls: dict[int, dict[str, str]] = {}
-        reasoning_parts: list[str] = []
-        final_usage: dict[str, int] = {}
-        final_finish: str | None = None
-
-        async for chunk in response:
-            # Capture usage from any chunk (OpenAI sends it on a separate
-            # usage-only chunk after the finish chunk).
-            if hasattr(chunk, "usage") and chunk.usage:
-                final_usage = {
-                    "prompt_tokens": getattr(chunk.usage, "prompt_tokens", 0) or 0,
-                    "completion_tokens": getattr(chunk.usage, "completion_tokens", 0) or 0,
-                    "total_tokens": getattr(chunk.usage, "total_tokens", 0) or 0,
-                }
-
-            if not chunk.choices:
-                continue
-
-            delta = chunk.choices[0].delta
-            finish = chunk.choices[0].finish_reason
-
-            # Yield text deltas.
-            if delta.content:
-                yield StreamChunk(delta=delta.content)
-
-            # Accumulate reasoning content.
-            reasoning_delta = getattr(delta, "reasoning_content", None)
-            if reasoning_delta:
-                reasoning_parts.append(reasoning_delta)
-
-            # Accumulate tool call deltas.
-            if delta.tool_calls:
-                for tc_delta in delta.tool_calls:
-                    idx = tc_delta.index
-                    if idx not in accumulated_tool_calls:
-                        accumulated_tool_calls[idx] = {"name": "", "arguments": ""}
-                    if tc_delta.function and tc_delta.function.name:
-                        accumulated_tool_calls[idx]["name"] = tc_delta.function.name
-                    if tc_delta.function and tc_delta.function.arguments:
-                        accumulated_tool_calls[idx]["arguments"] += tc_delta.function.arguments
-
-            if finish:
-                final_finish = finish
-
-        # Emit final chunk after stream is exhausted (captures usage-only trailing chunk).
-        final_tool_calls = None
-        if accumulated_tool_calls:
-            final_tool_calls = [
-                ToolCallRequest(
-                    id=short_tool_id(),
-                    name=tc["name"],
-                    arguments=json_repair.loads(tc["arguments"]) if tc["arguments"] else {},
+        except Exception as e:
+            # Streaming failed — fall back to non-streaming within same provider.
+            logger.warning("provider.stream_fallback_triggered: {}", str(e)[:200])
+            try:
+                fallback_response = await self.chat(
+                    messages=messages,
+                    tools=tools,
+                    model=model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    reasoning_effort=reasoning_effort,
+                    tool_choice=tool_choice,
                 )
-                for tc in accumulated_tool_calls.values()
-            ]
-
-        yield StreamChunk(
-            finish_reason=final_finish or "stop",
-            tool_calls=final_tool_calls,
-            usage=final_usage or None,
-            reasoning_content="".join(reasoning_parts) or None,
-        )
+                yield StreamChunk(
+                    delta=fallback_response.content or "",
+                    tool_calls=fallback_response.tool_calls or None,
+                    finish_reason=fallback_response.finish_reason,
+                    usage=fallback_response.usage or None,
+                    reasoning_content=fallback_response.reasoning_content,
+                    error_code=fallback_response.error_code,
+                )
+            except Exception as fallback_err:
+                resp = _handle_error(fallback_err)
+                yield StreamChunk(
+                    delta=resp.content or "",
+                    finish_reason="error",
+                    error_code=resp.error_code,
+                )
 
     # ------------------------------------------------------------------
     # Request building
