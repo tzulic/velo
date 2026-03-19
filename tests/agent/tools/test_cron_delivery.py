@@ -1,21 +1,6 @@
 """Tests for cross-channel cron delivery override."""
 
 import pytest
-from unittest.mock import MagicMock
-from velo.agent.tools.cron import CronTool
-from velo.cron.service import CronService
-
-
-@pytest.fixture
-def cron_tool():
-    service = MagicMock(spec=CronService)
-    mock_job = MagicMock()
-    mock_job.name = "test"
-    mock_job.id = "j123"
-    service.add_job.return_value = mock_job
-    tool = CronTool(service)
-    tool.set_context("telegram", "12345")
-    return tool
 
 
 @pytest.mark.asyncio

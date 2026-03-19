@@ -814,7 +814,10 @@ class AgentLoop:
                         logger.info("budget_exceeded for session {}", session_key)
                     else:
                         logger.error("LLM returned error: {}", (clean or "")[:200])
-                    final_content = _user_error_message(code)
+                    if code == "auth_error":
+                        final_content = self.provider.get_auth_error_message()
+                    else:
+                        final_content = _user_error_message(code)
                     break
                 messages = self.context.add_assistant_message(
                     messages,
@@ -1179,7 +1182,7 @@ class AgentLoop:
                 channel=msg.channel, chat_id=msg.chat_id, content="New session started."
             )
         if cmd == "/retry":
-            original_text, _ = session.truncate_to_last_user()
+            original_text = session.truncate_to_last_user()
             if original_text is None:
                 return OutboundMessage(
                     channel=msg.channel,
