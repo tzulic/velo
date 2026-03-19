@@ -3,6 +3,7 @@
 from contextvars import ContextVar
 from typing import Any
 
+from velo.agent.security import scan_content
 from velo.agent.tools.base import Tool
 from velo.cron.service import CronService
 from velo.cron.types import CronSchedule
@@ -84,6 +85,9 @@ class CronTool(Tool):
         if action == "add":
             if self._in_cron_context.get():
                 return "Error: cannot schedule new jobs from within a cron job execution"
+            threat = scan_content(message)
+            if threat:
+                return f"Error: job prompt rejected — {threat}"
             return self._add_job(message, every_seconds, cron_expr, tz, at)
         elif action == "list":
             return self._list_jobs()

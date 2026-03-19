@@ -55,6 +55,25 @@ THREAT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^#!.*/bin/", re.MULTILINE), "shebang_in_content"),
     (re.compile(r"\beval\s*\(", re.IGNORECASE), "eval_call"),
     (re.compile(r"\bexec\s*\(", re.IGNORECASE), "exec_call"),
+    # Destructive filesystem operations
+    (re.compile(r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*f?\s+/", re.IGNORECASE), "destructive_fs"),
+    (re.compile(r"\bmkfs\b", re.IGNORECASE), "destructive_fs"),
+    (re.compile(r"\bdd\s+if=", re.IGNORECASE), "destructive_fs"),
+    # Process manipulation
+    (re.compile(r"\b(kill|pkill|killall)\s+(-\d+\s+)?\d+", re.IGNORECASE), "process_kill"),
+    (re.compile(r"\bpkill\s+-f\s+", re.IGNORECASE), "process_kill"),
+    # Network reconnaissance
+    (re.compile(r"\bnmap\b", re.IGNORECASE), "network_recon"),
+    (re.compile(r"\bnc\s+-(l|e)", re.IGNORECASE), "network_recon"),
+    # Privilege escalation
+    (re.compile(r"\bchmod\s+[0-7]*7[0-7]*\s+/", re.IGNORECASE), "priv_escalation"),
+    (re.compile(r"\bchmod\s+u\+s\b", re.IGNORECASE), "priv_escalation"),
+    # Crypto mining
+    (re.compile(r"\b(xmrig|minerd|cpuminer)\b", re.IGNORECASE), "crypto_mining"),
+    (re.compile(r"stratum\+tcp://", re.IGNORECASE), "crypto_mining"),
+    # Sudoers modification
+    (re.compile(r"\bvisudo\b", re.IGNORECASE), "sudoers_mod"),
+    (re.compile(r"/etc/sudoers\b", re.IGNORECASE), "sudoers_mod"),
 ]
 
 # Reason: single regex is faster than char-by-char set lookup for large content.
