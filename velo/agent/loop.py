@@ -681,8 +681,8 @@ class AgentLoop:
 
             # Accumulate token usage for cost tracking
             if response.usage:
-                total_tokens_in += response.usage.get("input_tokens", 0)
-                total_tokens_out += response.usage.get("output_tokens", 0)
+                total_tokens_in += response.usage.get("prompt_tokens", 0)
+                total_tokens_out += response.usage.get("completion_tokens", 0)
 
             # Provider fallback: if primary exhausted all retries with a transient error,
             # swap to the backup provider and retry once. One-shot — stays active for session.
