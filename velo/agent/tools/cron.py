@@ -67,6 +67,14 @@ class CronTool(Tool):
                     "description": "ISO datetime for one-time execution (e.g. '2026-02-12T10:30:00')",
                 },
                 "job_id": {"type": "string", "description": "Job ID (for remove)"},
+                "deliver_channel": {
+                    "type": "string",
+                    "description": "Override delivery channel (e.g. 'telegram', 'discord')",
+                },
+                "deliver_chat_id": {
+                    "type": "string",
+                    "description": "Override delivery chat ID for the target channel",
+                },
             },
             "required": ["action"],
         }
@@ -80,6 +88,8 @@ class CronTool(Tool):
         tz: str | None = None,
         at: str | None = None,
         job_id: str | None = None,
+        deliver_channel: str | None = None,
+        deliver_chat_id: str | None = None,
         **kwargs: Any,
     ) -> str:
         if action == "add":
@@ -91,7 +101,7 @@ class CronTool(Tool):
             threat = scan_content(message)
             if threat:
                 return f"Error: job prompt rejected — {threat}"
-            return self._add_job(message, every_seconds, cron_expr, tz, at)
+            return self._add_job(message, every_seconds, cron_expr, tz, at, deliver_channel, deliver_chat_id)
         elif action == "list":
             return self._list_jobs()
         elif action == "remove":
@@ -105,6 +115,8 @@ class CronTool(Tool):
         cron_expr: str | None,
         tz: str | None,
         at: str | None,
+        deliver_channel: str | None = None,
+        deliver_chat_id: str | None = None,
     ) -> str:
         if not message:
             return "Error: message is required for add"
@@ -139,13 +151,17 @@ class CronTool(Tool):
         else:
             return "Error: either every_seconds, cron_expr, or at is required"
 
+        # Use override delivery target if specified, otherwise origin
+        target_channel = deliver_channel or self._channel
+        target_chat_id = deliver_chat_id or self._chat_id
+
         job = self._cron.add_job(
             name=message[:30],
             schedule=schedule,
             message=message,
             deliver=True,
-            channel=self._channel,
-            to=self._chat_id,
+            channel=target_channel,
+            to=target_chat_id,
             delete_after_run=delete_after,
         )
         return f"Created job '{job.name}' (id: {job.id})"
