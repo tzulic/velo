@@ -30,6 +30,12 @@ from velo.agent.llm_helpers import (
     chat_with_retry,
     trim_to_budget,
 )
+from velo.agent.memory_triggers import (
+    get_triggered_nudge as _get_triggered_nudge,
+)
+from velo.agent.memory_triggers import (
+    should_trigger_memory_nudge as _should_trigger_memory_nudge,
+)
 from velo.agent.provider_health import get_provider_health
 from velo.agent.subagent import SubagentManager
 from velo.agent.tools.browse import BrowserSession, WebBrowseTool
@@ -40,10 +46,6 @@ from velo.agent.tools.registry import ToolRegistry
 from velo.agent.tools.search import SearchToolsTool
 from velo.agent.tools.shell import ExecTool
 from velo.agent.tools.spawn import SpawnTool
-from velo.agent.memory_triggers import (
-    get_triggered_nudge as _get_triggered_nudge,
-    should_trigger_memory_nudge as _should_trigger_memory_nudge,
-)
 from velo.agent.tools.web import WebFetchTool, WebSearchTool
 from velo.bus.events import InboundMessage, OutboundMessage  # noqa: I001
 from velo.bus.queue import MessageBus  # Honcho: lazy import of adapter/tools in __init__

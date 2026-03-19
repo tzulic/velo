@@ -10,12 +10,12 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from loguru import logger
 
+from velo.agent.progress import ProgressTracker
 from velo.agent.tools.browse import BrowserSession, WebBrowseTool
 from velo.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from velo.agent.tools.registry import ToolRegistry
 from velo.agent.tools.shell import ExecTool
 from velo.agent.tools.web import WebFetchTool, WebSearchTool
-from velo.agent.progress import ProgressTracker
 from velo.bus.events import InboundMessage
 from velo.bus.queue import MessageBus
 from velo.config.schema import BrowseConfig, ExecToolConfig
