@@ -84,7 +84,10 @@ class CronTool(Tool):
     ) -> str:
         if action == "add":
             if self._in_cron_context.get():
-                return "Error: cannot schedule new jobs from within a cron job execution"
+                # Allow one-shot jobs (at=...) but block repeating schedules
+                is_oneshot = at is not None and every_seconds is None and cron_expr is None
+                if not is_oneshot:
+                    return "Error: cannot schedule repeating jobs from within a cron job. One-shot (at=...) jobs are allowed."
             threat = scan_content(message)
             if threat:
                 return f"Error: job prompt rejected — {threat}"
