@@ -15,6 +15,7 @@ from velo.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool,
 from velo.agent.tools.registry import ToolRegistry
 from velo.agent.tools.shell import ExecTool
 from velo.agent.tools.web import WebFetchTool, WebSearchTool
+from velo.agent.progress import ProgressTracker
 from velo.bus.events import InboundMessage
 from velo.bus.queue import MessageBus
 from velo.config.schema import BrowseConfig, ExecToolConfig
@@ -224,6 +225,7 @@ class SubagentManager:
                 ]
 
                 # Run agent loop (limited iterations)
+                tracker = ProgressTracker()
                 max_iterations = 15
                 iteration = 0
                 final_result: str | None = None
@@ -282,6 +284,7 @@ class SubagentManager:
                                 args_str[:200],
                             )
                             result = await tools.execute(tool_call.name, tool_call.arguments)
+                            tracker.record_tool(tool_call.name, tool_call.arguments)
                             messages.append(
                                 {
                                     "role": "tool",
@@ -296,6 +299,11 @@ class SubagentManager:
 
                 if final_result is None:
                     final_result = "Task completed but no final response was generated."
+
+                # Prepend tool usage summary to the result
+                progress_summary = tracker.summary()
+                if progress_summary:
+                    final_result = f"{progress_summary}\n\n{final_result}"
 
                 logger.info("subagent.completed: id={}", task_id)
 
