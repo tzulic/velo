@@ -1,0 +1,47 @@
+{
+  "id": "chub",
+  "name": "Context Hub",
+  "version": "0.1.0",
+  "description": "Curated API documentation via Context Hub CLI for coding-oriented agents",
+  "category": "horizontal",
+  "tags": ["coding", "documentation", "api-docs", "context-hub"],
+  "config_schema": {
+    "enabled": {
+      "type": "boolean", "default": true, "required": false,
+      "label": "Enable Context Hub", "help": "Enable curated API doc fetching via chub CLI",
+      "sensitive": false, "advanced": false
+    },
+    "lang_default": {
+      "type": "string", "default": "py", "required": false,
+      "label": "Default language", "help": "Default language variant for docs (py or js)",
+      "sensitive": false, "advanced": false
+    },
+    "global_annotations_path": {
+      "type": "string", "default": "/opt/volos/shared/chub-annotations", "required": false,
+      "label": "Global annotations path", "help": "Shared annotations directory across all Volos agents",
+      "sensitive": false, "advanced": true
+    },
+    "search_timeout": {
+      "type": "integer", "default": 10, "required": false,
+      "label": "Search timeout", "help": "Timeout in seconds for chub search",
+      "sensitive": false, "advanced": true
+    },
+    "get_timeout": {
+      "type": "integer", "default": 15, "required": false,
+      "label": "Get timeout", "help": "Timeout in seconds for chub get",
+      "sensitive": false, "advanced": true
+    },
+    "annotate_timeout": {
+      "type": "integer", "default": 5, "required": false,
+      "label": "Annotate timeout", "help": "Timeout in seconds for chub annotate",
+      "sensitive": false, "advanced": true
+    }
+  },
+  "requires": { "channels": [], "env": [], "plugins": [] },
+  "hooks": [],
+  "tools": ["chub_search", "chub_get", "chub_annotate"],
+  "services": false,
+  "context_provider": true,
+  "used_by_templates": [],
+  "ui_hints": {}
+}
