@@ -533,6 +533,20 @@ class AnthropicProvider(LLMProvider):
         """Get the default model for this provider."""
         return self._default_model
 
+    def get_auth_error_message(self) -> str:
+        """Return auth error message specific to token type.
+
+        Returns:
+            str: OAuth-specific message for Claude Max tokens,
+                 generic API key message otherwise.
+        """
+        if self._is_oauth:
+            return (
+                "Your Claude Max session has expired. "
+                "Please re-authenticate to continue."
+            )
+        return "Authentication failed. Please check your Anthropic API key."
+
 
 # ======================================================================
 # Module-level helpers (keep class body lean)
