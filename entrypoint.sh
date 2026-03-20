@@ -5,9 +5,15 @@ TOKEN_FILE="/run/secrets/tenant_token"
 CONFIG="$HOME/.velo/config.json"
 
 if [ -f "$TOKEN_FILE" ] && [ -f "$CONFIG" ]; then
-    # Pass token as env var — never shell-interpolate credential values into code strings.
+    TOKEN="$(cat "$TOKEN_FILE")"
+
+    # Export tenant token as env vars for all proxy services.
+    # Each proxy client reads its own env var for authentication.
+    export COMPOSIO_API_KEY="$TOKEN"
+
+    # Inject token into config.json paths (LLM, dashboard, honcho, parallel).
     # Write target is the volume mount, which bypasses read_only: true.
-    TOKEN="$(cat "$TOKEN_FILE")" python3 -c "
+    TOKEN="$TOKEN" python3 -c "
 import json, os
 
 config_path = os.path.join(os.environ.get('HOME', '/root'), '.velo', 'config.json')
