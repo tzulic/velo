@@ -93,8 +93,10 @@ async def activate(ctx: PluginContext) -> None:
         return
 
     try:
-        # COMPOSIO_BASE_URL env var is picked up automatically by the SDK
-        composio = Composio(api_key=api_key)
+        # Reason: Composio SDK v1.x does NOT read COMPOSIO_BASE_URL from env.
+        # Must pass base_url explicitly to route through the Volos proxy.
+        base_url = os.environ.get("COMPOSIO_BASE_URL")
+        composio = Composio(api_key=api_key, base_url=base_url) if base_url else Composio(api_key=api_key)
         session = composio.create(user_id=user_id)
         tools = session.tools()
     except Exception as exc:
