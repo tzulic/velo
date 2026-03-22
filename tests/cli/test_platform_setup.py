@@ -1,6 +1,9 @@
 """Tests for the platform setup wizard PLATFORMS registry."""
 
-from velo.cli.platform_setup import PLATFORMS
+import json
+
+from velo.cli.platform_setup import PLATFORMS, apply_platform_values
+from velo.config.loader import load_config
 
 
 def test_platforms_registry_has_core_platforms():
@@ -55,9 +58,9 @@ def test_password_fields_are_tokens():
         for v in p["vars"]:
             if v.get("password"):
                 lower_name = v["name"].lower()
-                assert any(
-                    kw in lower_name for kw in ("token", "secret", "key", "password")
-                ), f"password=True on non-secret field '{v['name']}' in {p['key']}"
+                assert any(kw in lower_name for kw in ("token", "secret", "key", "password")), (
+                    f"password=True on non-secret field '{v['name']}' in {p['key']}"
+                )
 
 
 def test_allowlist_fields_have_is_allowlist():
@@ -68,3 +71,88 @@ def test_allowlist_fields_have_is_allowlist():
                 assert v.get("is_allowlist") is True, (
                     f"allow_from field '{v['name']}' in {p['key']} missing is_allowlist=True"
                 )
+
+
+# ── apply_platform_values tests ──────────────────────────────────────
+
+
+def test_apply_platform_values_writes_to_config(tmp_path):
+    """Applying a channel token writes it and auto-enables the channel."""
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}")
+
+    values = {"channels.telegram.token": "123:ABC"}
+    apply_platform_values(values, config_path)
+
+    config = load_config(config_path)
+    assert config.channels.telegram.token == "123:ABC"
+    assert config.channels.telegram.enabled is True  # auto-enabled
+
+
+def test_apply_preserves_existing_values(tmp_path):
+    """Applying new channel values must not clobber unrelated config sections."""
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"agents": {"defaults": {"model": "custom/model"}}}))
+
+    values = {"channels.discord.token": "my-token"}
+    apply_platform_values(values, config_path)
+
+    config = load_config(config_path)
+    assert config.channels.discord.token == "my-token"
+    assert config.agents.defaults.model == "custom/model"  # preserved
+
+
+def test_apply_allowlist_sets_list(tmp_path):
+    """Allowlist values (lists) are stored as lists on the Pydantic model."""
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}")
+
+    values = {"channels.telegram.allow_from": ["user1", "user2"]}
+    apply_platform_values(values, config_path)
+
+    config = load_config(config_path)
+    assert config.channels.telegram.allow_from == ["user1", "user2"]
+
+
+def test_apply_multiple_values_at_once(tmp_path):
+    """Multiple dot-path keys in a single call are all applied."""
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}")
+
+    values = {
+        "channels.slack.bot_token": "xoxb-123",
+        "channels.slack.app_token": "xapp-456",
+    }
+    apply_platform_values(values, config_path)
+
+    config = load_config(config_path)
+    assert config.channels.slack.bot_token == "xoxb-123"
+    assert config.channels.slack.app_token == "xapp-456"
+    assert config.channels.slack.enabled is True
+
+
+def test_apply_does_not_enable_when_no_credential(tmp_path):
+    """Setting only an allowlist (no token/secret) should not auto-enable."""
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}")
+
+    values = {"channels.telegram.allow_from": ["user1"]}
+    apply_platform_values(values, config_path)
+
+    config = load_config(config_path)
+    assert config.channels.telegram.enabled is False
+
+
+def test_apply_saved_file_uses_camel_case(tmp_path):
+    """The persisted JSON must use camelCase keys (via Pydantic aliases)."""
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}")
+
+    values = {"channels.slack.bot_token": "xoxb-test"}
+    apply_platform_values(values, config_path)
+
+    raw = json.loads(config_path.read_text())
+    slack_cfg = raw["channels"]["slack"]
+    # save_config uses by_alias=True, so keys must be camelCase
+    assert "botToken" in slack_cfg
+    assert "bot_token" not in slack_cfg
