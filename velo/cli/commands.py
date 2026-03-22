@@ -218,9 +218,16 @@ def onboard():
     console.print("  1. Add your API key to [cyan]~/.velo/config.json[/cyan]")
     console.print("     Get one at: https://openrouter.ai/keys")
     console.print('  2. Chat: [cyan]Velo agent -m "Hello!"[/cyan]')
-    console.print(
-        "\n[dim]Want Telegram/WhatsApp? See: https://github.com/HKUDS/Velo#-chat-apps[/dim]"
-    )
+
+    try:
+        if sys.stdin.isatty() and typer.confirm(
+            "\nSet up a messaging platform now?", default=False
+        ):
+            from velo.cli.platform_setup import run_platform_setup
+
+            run_platform_setup(config_path)
+    except (EOFError, KeyboardInterrupt):
+        pass
 
 
 def _build_fallback_provider(config: Config):
@@ -417,7 +424,7 @@ def gateway(
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config file"),
 ):
     """Start the Velo gateway."""
-    from velo.agent.loop import AgentLoop
+    from velo.agent.factory import build_agent_loop
     from velo.bus.queue import MessageBus
     from velo.channels.manager import ChannelManager
     from velo.config.paths import get_cron_dir
@@ -452,37 +459,14 @@ def gateway(
     cron = CronService(cron_store_path)
 
     # Create agent with cron service and plugin manager
-    agent = AgentLoop(
+    agent = build_agent_loop(
+        config=config,
         bus=bus,
         provider=provider,
-        workspace=config.workspace_path,
-        model=config.agents.defaults.model,
-        temperature=config.agents.defaults.temperature,
-        max_tokens=config.agents.defaults.max_tokens,
-        max_iterations=config.agents.defaults.max_tool_iterations,
-        memory_window=config.agents.defaults.memory_window,
-        memory_char_limit=config.agents.defaults.memory_char_limit,
-        user_char_limit=config.agents.defaults.user_char_limit,
-        memory_nudge_interval=config.agents.defaults.memory_nudge_interval,
-        compress_protect_first=config.agents.defaults.compress_protect_first,
-        compress_protect_last=config.agents.defaults.compress_protect_last,
-        reasoning_effort=config.agents.defaults.reasoning_effort,
-        parallel_api_key=config.tools.web.search.api_key or None,
-        web_proxy=config.tools.web.proxy or None,
-        browse_config=config.tools.web.browse,
-        exec_config=config.tools.exec,
         cron_service=cron,
-        restrict_to_workspace=config.tools.restrict_to_workspace,
-        session_manager=session_manager,
-        mcp_servers=config.tools.mcp_servers,
-        channels_config=config.channels,
         plugin_manager=plugin_mgr,
-        context_window=config.agents.defaults.context_window,
-        a2a_peers=config.a2a.peers,
         fallback_provider=fallback_provider,
-        subagent_model=config.agents.defaults.subagent_model,
-        save_trajectories=config.agents.defaults.save_trajectories,
-        honcho_config=config.honcho,
+        session_manager=session_manager,
     )
 
     # Set cron callback (needs agent)
@@ -676,7 +660,7 @@ def agent(
     """Interact with the agent directly."""
     from loguru import logger
 
-    from velo.agent.loop import AgentLoop
+    from velo.agent.factory import build_agent_loop
     from velo.bus.queue import MessageBus
     from velo.config.paths import get_cron_dir
     from velo.cron.service import CronService
@@ -716,37 +700,14 @@ def agent(
     is_interactive_tty = sys.stdin.isatty()
     clarify_callback = _cli_clarify if is_interactive_tty else None
 
-    agent_loop = AgentLoop(
+    agent_loop = build_agent_loop(
+        config=config,
         bus=bus,
         provider=provider,
-        workspace=config.workspace_path,
-        model=config.agents.defaults.model,
-        temperature=config.agents.defaults.temperature,
-        max_tokens=config.agents.defaults.max_tokens,
-        max_iterations=config.agents.defaults.max_tool_iterations,
-        memory_window=config.agents.defaults.memory_window,
-        memory_char_limit=config.agents.defaults.memory_char_limit,
-        user_char_limit=config.agents.defaults.user_char_limit,
-        memory_nudge_interval=config.agents.defaults.memory_nudge_interval,
-        compress_protect_first=config.agents.defaults.compress_protect_first,
-        compress_protect_last=config.agents.defaults.compress_protect_last,
-        reasoning_effort=config.agents.defaults.reasoning_effort,
-        parallel_api_key=config.tools.web.search.api_key or None,
-        web_proxy=config.tools.web.proxy or None,
-        browse_config=config.tools.web.browse,
-        exec_config=config.tools.exec,
         cron_service=cron,
-        restrict_to_workspace=config.tools.restrict_to_workspace,
-        session_backend=config.agents.defaults.session_backend,
-        mcp_servers=config.tools.mcp_servers,
-        channels_config=config.channels,
         plugin_manager=plugin_mgr,
-        context_window=config.agents.defaults.context_window,
         fallback_provider=fallback_provider,
-        subagent_model=config.agents.defaults.subagent_model,
-        save_trajectories=config.agents.defaults.save_trajectories,
         clarify_callback=clarify_callback,
-        honcho_config=config.honcho,
     )
 
     # Show spinner when logs are off (no output to miss); skip when logs are on
@@ -901,6 +862,15 @@ def agent(
 
 channels_app = typer.Typer(help="Manage channels")
 app.add_typer(channels_app, name="channels")
+
+
+@channels_app.command("setup")
+def channels_setup_cmd():
+    """Interactive setup wizard for messaging platforms."""
+    from velo.cli.platform_setup import run_platform_setup
+    from velo.config.loader import get_config_path
+
+    run_platform_setup(get_config_path())
 
 
 @channels_app.command("status")
@@ -1175,6 +1145,75 @@ def _login_github_copilot() -> None:
         "Set your Copilot token in ~/.velo/config.json under providers.github_copilot.api_key"
     )
     console.print("See: https://github.com/settings/copilot for token management.")
+
+
+# ============================================================================
+# Service Commands (systemd/launchd management)
+# ============================================================================
+
+service_app = typer.Typer(help="Manage the gateway background service")
+app.add_typer(service_app, name="service")
+
+
+@service_app.command("install")
+def service_install_cmd(
+    force: bool = typer.Option(False, "--force", help="Reinstall even if present"),
+    system: bool = typer.Option(False, "--system", help="Linux: install as system service"),
+):
+    """Install the gateway as a background service (systemd/launchd)."""
+    from velo.cli.service import service_install
+
+    service_install(force=force, system=system)
+
+
+@service_app.command("uninstall")
+def service_uninstall_cmd(
+    system: bool = typer.Option(False, "--system", help="Linux: remove system service"),
+):
+    """Remove the gateway background service."""
+    from velo.cli.service import service_uninstall
+
+    service_uninstall(system=system)
+
+
+@service_app.command("start")
+def service_start_cmd(
+    system: bool = typer.Option(False, "--system", help="Linux: start system service"),
+):
+    """Start the gateway background service."""
+    from velo.cli.service import service_start
+
+    service_start(system=system)
+
+
+@service_app.command("stop")
+def service_stop_cmd(
+    system: bool = typer.Option(False, "--system", help="Linux: stop system service"),
+):
+    """Stop the gateway background service."""
+    from velo.cli.service import service_stop
+
+    service_stop(system=system)
+
+
+@service_app.command("restart")
+def service_restart_cmd(
+    system: bool = typer.Option(False, "--system", help="Linux: restart system service"),
+):
+    """Restart the gateway background service."""
+    from velo.cli.service import service_restart
+
+    service_restart(system=system)
+
+
+@service_app.command("status")
+def service_status_cmd(
+    system: bool = typer.Option(False, "--system", help="Linux: show system service"),
+):
+    """Show gateway service status."""
+    from velo.cli.service import service_status
+
+    service_status(system=system)
 
 
 if __name__ == "__main__":
