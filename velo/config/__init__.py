@@ -10,6 +10,7 @@ from velo.config.paths import (
     get_logs_dir,
     get_media_dir,
     get_runtime_subdir,
+    get_velo_home,
     get_workspace_path,
 )
 from velo.config.schema import Config
@@ -27,4 +28,5 @@ __all__ = [
     "get_cli_history_path",
     "get_bridge_install_dir",
     "get_legacy_sessions_dir",
+    "get_velo_home",
 ]

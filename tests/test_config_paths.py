@@ -9,6 +9,7 @@ from velo.config.paths import (
     get_logs_dir,
     get_media_dir,
     get_runtime_subdir,
+    get_velo_home,
     get_workspace_path,
 )
 
@@ -31,12 +32,31 @@ def test_media_dir_supports_channel_namespace(monkeypatch, tmp_path: Path) -> No
     assert get_media_dir("telegram") == config_file.parent / "media" / "telegram"
 
 
-def test_shared_and_legacy_paths_remain_global() -> None:
-    assert get_cli_history_path() == Path.home() / ".velo" / "history" / "cli_history"
-    assert get_bridge_install_dir() == Path.home() / ".velo" / "bridge"
-    assert get_legacy_sessions_dir() == Path.home() / ".velo" / "sessions"
+def test_shared_and_legacy_paths_remain_global(monkeypatch) -> None:
+    monkeypatch.delenv("VELO_HOME", raising=False)
+    home = (Path.home() / ".velo").resolve()
+    assert get_cli_history_path() == home / "history" / "cli_history"
+    assert get_bridge_install_dir() == home / "bridge"
+    assert get_legacy_sessions_dir() == home / "sessions"
 
 
-def test_workspace_path_is_explicitly_resolved() -> None:
-    assert get_workspace_path() == Path.home() / ".velo" / "workspace"
+def test_workspace_path_is_explicitly_resolved(monkeypatch) -> None:
+    monkeypatch.delenv("VELO_HOME", raising=False)
+    home = (Path.home() / ".velo").resolve()
+    assert get_workspace_path() == home / "workspace"
     assert get_workspace_path("~/custom-workspace") == Path.home() / "custom-workspace"
+
+
+def test_velo_home_default(monkeypatch):
+    monkeypatch.delenv("VELO_HOME", raising=False)
+    assert get_velo_home() == (Path.home() / ".velo").resolve()
+
+
+def test_velo_home_env_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("VELO_HOME", str(tmp_path))
+    assert get_velo_home() == tmp_path.resolve()
+
+
+def test_workspace_respects_velo_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("VELO_HOME", str(tmp_path))
+    assert str(get_workspace_path()).startswith(str(tmp_path))

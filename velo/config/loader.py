@@ -1,6 +1,7 @@
 """Configuration loading utilities."""
 
 import json
+import os
 from pathlib import Path
 
 from velo.config.schema import Config
@@ -19,7 +20,8 @@ def get_config_path() -> Path:
     """Get the configuration file path."""
     if _current_config_path:
         return _current_config_path
-    return Path.home() / ".velo" / "config.json"
+    # Mirrors get_velo_home() in paths.py to avoid circular import.
+    return Path(os.getenv("VELO_HOME", Path.home() / ".velo")).resolve() / "config.json"
 
 
 def load_config(config_path: Path | None = None) -> Config:
