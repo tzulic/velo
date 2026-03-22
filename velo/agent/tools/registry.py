@@ -5,6 +5,9 @@ from typing import Any
 from velo.agent.tools.base import Tool
 from velo.agent.tools.sanitize import sanitize_tool_result
 
+# Sentinel for cache invalidation (distinct from None which is a valid return value)
+_SENTINEL = object()
+
 # Tools restricted in group chat sessions
 _GROUP_RESTRICTED_TOOLS: frozenset[str] = frozenset(
     {
@@ -37,6 +40,7 @@ class ToolRegistry:
     def __init__(self):
         self._tools: dict[str, Tool] = {}
         self._deferred: dict[str, Tool] = {}
+        self._cached_deferred_summary: str | None | object = _SENTINEL
 
     def register(self, tool: Tool, *, deferred: bool = False) -> None:
         """Register a tool.
@@ -47,6 +51,7 @@ class ToolRegistry:
         """
         if deferred:
             self._deferred[tool.name] = tool
+            self._invalidate_deferred_cache()
         else:
             self._tools[tool.name] = tool
 
@@ -63,6 +68,7 @@ class ToolRegistry:
         if tool is None:
             return False
         self._tools[name] = tool
+        self._invalidate_deferred_cache()
         return True
 
     def search_deferred(self, query: str, limit: int = 5) -> list[tuple[str, str]]:
@@ -115,21 +121,27 @@ class ToolRegistry:
         """Return a concise summary of deferred tools grouped by source.
 
         Groups tools by known prefixes (``mcp_``, ``composio_``). Ungrouped
-        deferred tools are listed by name.
+        deferred tools are listed by name. Results are cached until the deferred
+        pool changes (register, activate, or unregister).
 
         Returns:
             Comma-separated string like "github (12 tools), composio:gmail (5 tools)",
             or None if no deferred tools.
         """
+        if self._cached_deferred_summary is not _SENTINEL:
+            return self._cached_deferred_summary  # type: ignore[return-value]
+
         if not self._deferred:
-            return None
+            result = None
+        else:
+            groups: dict[str, int] = {}
+            for name in self._deferred:
+                key = self._deferred_group_key(name)
+                groups[key] = groups.get(key, 0) + 1
+            result = ", ".join(f"{g} ({c} tools)" for g, c in sorted(groups.items()))
 
-        groups: dict[str, int] = {}
-        for name in self._deferred:
-            key = self._deferred_group_key(name)
-            groups[key] = groups.get(key, 0) + 1
-
-        return ", ".join(f"{g} ({c} tools)" for g, c in sorted(groups.items()))
+        self._cached_deferred_summary = result
+        return result
 
     def _deferred_group_key(self, name: str) -> str:
         """Derive the display group key for a deferred tool name.
@@ -146,10 +158,15 @@ class ToolRegistry:
                 return f"{display_prefix}{segment}"
         return name
 
+    def _invalidate_deferred_cache(self) -> None:
+        """Reset the cached deferred summary so the next call recomputes it."""
+        self._cached_deferred_summary = _SENTINEL
+
     def unregister(self, name: str) -> None:
         """Unregister a tool by name (active or deferred)."""
         self._tools.pop(name, None)
-        self._deferred.pop(name, None)
+        if self._deferred.pop(name, None) is not None:
+            self._invalidate_deferred_cache()
 
     def get(self, name: str) -> Tool | None:
         """Get an active tool by name."""

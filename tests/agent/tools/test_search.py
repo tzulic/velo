@@ -186,6 +186,55 @@ class TestGetDeferredSummary:
         summary = reg.get_deferred_summary()
         assert "custom_tool" in summary
 
+    def test_cache_returns_same_result(self) -> None:
+        """Second call returns cached result without recomputation."""
+        reg = ToolRegistry()
+        reg.register(_make_tool("mcp_github_list_repos", "List repos"), deferred=True)
+        reg.register(_make_tool("mcp_github_create_pr", "Create PR"), deferred=True)
+        first = reg.get_deferred_summary()
+        second = reg.get_deferred_summary()
+        assert first == second
+        # Reason: identity check proves it's the exact cached object, not a recomputed string
+        assert first is second
+
+    def test_cache_invalidated_on_register(self) -> None:
+        """Registering a new deferred tool invalidates the cache."""
+        reg = ToolRegistry()
+        reg.register(_make_tool("mcp_github_list_repos", "List repos"), deferred=True)
+        summary_before = reg.get_deferred_summary()
+        assert "github (1 tools)" in summary_before
+
+        reg.register(_make_tool("mcp_slack_send", "Send message"), deferred=True)
+        summary_after = reg.get_deferred_summary()
+        assert "github (1 tools)" in summary_after
+        assert "slack (1 tools)" in summary_after
+        assert summary_before is not summary_after
+
+    def test_cache_invalidated_on_activate(self) -> None:
+        """Activating a deferred tool invalidates the cache."""
+        reg = ToolRegistry()
+        reg.register(_make_tool("mcp_github_list_repos", "List repos"), deferred=True)
+        reg.register(_make_tool("mcp_slack_send", "Send message"), deferred=True)
+        summary_before = reg.get_deferred_summary()
+        assert "slack (1 tools)" in summary_before
+
+        reg.activate("mcp_slack_send")
+        summary_after = reg.get_deferred_summary()
+        assert "slack" not in summary_after
+        assert "github (1 tools)" in summary_after
+
+    def test_cache_invalidated_on_unregister(self) -> None:
+        """Unregistering a deferred tool invalidates the cache."""
+        reg = ToolRegistry()
+        reg.register(_make_tool("mcp_github_list_repos", "List repos"), deferred=True)
+        reg.register(_make_tool("mcp_slack_send", "Send message"), deferred=True)
+        summary_before = reg.get_deferred_summary()
+        assert "slack (1 tools)" in summary_before
+
+        reg.unregister("mcp_slack_send")
+        summary_after = reg.get_deferred_summary()
+        assert "slack" not in summary_after
+
 
 # ---------------------------------------------------------------------------
 # SearchToolsTool tests
