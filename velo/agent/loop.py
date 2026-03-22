@@ -36,7 +36,10 @@ from velo.agent.memory_triggers import (
 from velo.agent.memory_triggers import (
     should_trigger_memory_nudge as _should_trigger_memory_nudge,
 )
+from velo.agent.message_helpers import format_tool_calls
 from velo.agent.provider_health import get_provider_health
+from velo.agent.review import PostTurnReviewer
+from velo.agent.skill_nudge import SkillNudge
 from velo.agent.subagent import SubagentManager
 from velo.agent.tools.browse import BrowserSession, WebBrowseTool
 from velo.agent.tools.cron import CronTool
@@ -280,6 +283,15 @@ class AgentLoop:
         )
         # Reason: track turns per session to inject periodic memory nudges.
         self._turn_counts: dict[str, int] = {}
+        # Reason: nudge skill creation after complex tool sequences (once per session).
+        self._skill_nudges: dict[str, SkillNudge] = {}
+        # Reason: background review agent analyses complex turns for skill creation.
+        self._reviewer = PostTurnReviewer(
+            provider=provider,
+            workspace=workspace,
+            model=self.subagent_model or self.model,
+            invalidate_callback=lambda: self.context.invalidate_prompt_cache(),
+        )
         self.sessions = session_manager or SessionManager(workspace, backend=session_backend)
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
@@ -735,17 +747,7 @@ class AgentLoop:
                     # Streaming already emitted thoughts; emit tool hints.
                     await on_progress(self._tool_hint(response.tool_calls), tool_hint=True)
 
-                tool_call_dicts = [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.name,
-                            "arguments": json.dumps(tc.arguments, ensure_ascii=False),
-                        },
-                    }
-                    for tc in response.tool_calls
-                ]
+                tool_call_dicts = format_tool_calls(response.tool_calls)
                 messages = self.context.add_assistant_message(
                     messages,
                     response.content,
@@ -852,8 +854,8 @@ class AgentLoop:
                 final_content = result
 
         # Record usage metrics
+        duration_ms = int(time.monotonic() * 1000) - start_ms
         if total_tokens_in > 0 or total_tokens_out > 0:
-            duration_ms = int(time.monotonic() * 1000) - start_ms
             try:
                 from velo.metrics.usage import record_usage
 
@@ -871,11 +873,10 @@ class AgentLoop:
                 logger.warning("usage.record_error: {}", e)
 
         # Plugin hook: agent_end (fire-and-forget, non-blocking)
-        duration_ms = int(time.monotonic() * 1000) - start_ms
         if self.plugin_manager:
-            asyncio.create_task(self.plugin_manager.fire(
-                "agent_end", messages=messages, duration_ms=duration_ms
-            ))
+            asyncio.create_task(
+                self.plugin_manager.fire("agent_end", messages=messages, duration_ms=duration_ms)
+            )
 
         return final_content, tools_used, messages
 
@@ -890,6 +891,9 @@ class AgentLoop:
         """Run the agent loop, dispatching messages as tasks to stay responsive to /stop."""
         self._running = True
         self._shutting_down = False
+        # Guard against broken-pipe crashes in systemd/Docker/daemon contexts (once).
+        if not isinstance(sys.stdout, _SafeWriter):
+            sys.stdout = _SafeWriter(sys.stdout)
         await self._connect_mcp()
         logger.info("Agent loop started")
 
@@ -950,6 +954,8 @@ class AgentLoop:
                     )
                 except asyncio.TimeoutError:
                     logger.warning("agent.shutdown_timeout: forcing stop after 60s drain")
+            # Cancel any in-flight background reviews.
+            await self._reviewer.shutdown()
             logger.info("agent.shutdown_completed")
 
     async def _handle_stop(self, msg: InboundMessage) -> None:
@@ -1048,10 +1054,6 @@ class AgentLoop:
         on_progress: Callable[[str], Awaitable[None]] | None = None,
     ) -> OutboundMessage | None:
         """Process a single inbound message and return the response."""
-        # Guard against broken-pipe crashes in systemd/Docker/daemon contexts.
-        if not isinstance(sys.stdout, _SafeWriter):
-            sys.stdout = _SafeWriter(sys.stdout)
-
         deferred_hint = self.tools.get_deferred_summary()
         # System messages: parse origin from chat_id ("channel:chat_id")
         if msg.channel == "system":
@@ -1084,13 +1086,15 @@ class AgentLoop:
 
         # Plugin hook: message_received (fire-and-forget, truly non-blocking)
         if self.plugin_manager:
-            asyncio.create_task(self.plugin_manager.fire(
-                "message_received",
-                content=msg.content,
-                channel=msg.channel,
-                chat_id=msg.chat_id,
-                metadata=msg.metadata or {},
-            ))
+            asyncio.create_task(
+                self.plugin_manager.fire(
+                    "message_received",
+                    content=msg.content,
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    metadata=msg.metadata or {},
+                )
+            )
 
         # Plugin hook: inbound_claim (first-claim-wins, lets plugins intercept messages)
         if self.plugin_manager:
@@ -1177,6 +1181,7 @@ class AgentLoop:
             self.sessions.save(session)
             self.sessions.invalidate(session.key)
             self._turn_counts.pop(key, None)
+            self._skill_nudges.pop(key, None)
             self.context.invalidate_prompt_cache()
             return OutboundMessage(
                 channel=msg.channel, chat_id=msg.chat_id, content="New session started."
@@ -1249,6 +1254,12 @@ class AgentLoop:
         if nudge is None and _should_trigger_memory_nudge(msg.content):
             nudge = _get_triggered_nudge()
 
+        # Skill creation nudge: inject if a prior turn flagged it (fires once per session).
+        skill_nudge = self._skill_nudges.get(key)
+        if skill_nudge is not None and skill_nudge.should_inject():
+            nudge = (nudge + "\n" if nudge else "") + skill_nudge.get_nudge_text()
+            skill_nudge.mark_injected()
+
         history = session.get_history(max_messages=self.memory_window)
         initial_messages = await self.context.build_messages(
             history=history,
@@ -1283,7 +1294,7 @@ class AgentLoop:
             budget = IterationBudget(self._max_iteration_budget)
         self.subagents.set_budget(key, budget)
 
-        final_content, _, all_msgs = await self._run_agent_loop(
+        final_content, tools_used, all_msgs = await self._run_agent_loop(
             initial_messages,
             on_progress=on_progress or _bus_progress,
             session_key=key,
@@ -1293,7 +1304,21 @@ class AgentLoop:
         if final_content is None:
             final_content = "I've completed processing but have no response to give."
 
+        # Reason: after complex turns (5+ tool calls), nudge skill creation on next turn
+        # and spawn a background review agent to analyse the turn.
+        skill_nudge = self._skill_nudges.get(key)
+        if skill_nudge is None:
+            skill_nudge = SkillNudge()
+            self._skill_nudges[key] = skill_nudge
+        if skill_nudge.should_nudge(len(tools_used)):
+            skill_nudge.mark_nudged()
+            logger.info("skill_nudge.triggered session={} tool_calls={}", key, len(tools_used))
+
         await self._save_turn(session, all_msgs, 1 + len(history))
+
+        # Spawn background review agent after saving (never blocks response delivery).
+        # Reason: shallow copy prevents the reviewer from seeing mutations to all_msgs.
+        self._reviewer.maybe_review(tools_used, list(all_msgs), key)
         self.sessions.save(session)
         self._save_trajectory(all_msgs, session.key, completed=True)
 

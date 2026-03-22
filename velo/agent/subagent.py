@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from loguru import logger
 
+from velo.agent.message_helpers import format_tool_calls
 from velo.agent.progress import ProgressTracker
 from velo.agent.tools.browse import BrowserSession, WebBrowseTool
 from velo.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
@@ -159,11 +160,13 @@ class SubagentManager:
 
         # Plugin hook: subagent_spawned (fire-and-forget, non-blocking)
         if self.plugin_manager:
-            asyncio.create_task(self.plugin_manager.fire(
-                "subagent_spawned",
-                child_session_key=task_id,
-                parent_session_key=session_key or "",
-            ))
+            asyncio.create_task(
+                self.plugin_manager.fire(
+                    "subagent_spawned",
+                    child_session_key=task_id,
+                    parent_session_key=session_key or "",
+                )
+            )
 
         return f"Subagent [{display_label}] started (id: {task_id}). I'll notify you when it completes."
 
@@ -255,17 +258,7 @@ class SubagentManager:
 
                     if response.has_tool_calls:
                         # Add assistant message with tool calls
-                        tool_call_dicts = [
-                            {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.name,
-                                    "arguments": json.dumps(tc.arguments, ensure_ascii=False),
-                                },
-                            }
-                            for tc in response.tool_calls
-                        ]
+                        tool_call_dicts = format_tool_calls(response.tool_calls)
                         messages.append(
                             {
                                 "role": "assistant",
